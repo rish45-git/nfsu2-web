@@ -342,6 +342,15 @@ the distance-based send rate and the hub's range, not a fault; a little hysteres
 - ToHost (commit 7b31bd8d, the joiner's car next to the host's after a race): built, asi_check PASS, not installed or
   tried in the game yet (the desktop's game held the file; the laptop's copy is in C:\dev\laptop-update).
 
+**The laptop's crash at the car dealer (2026-11-07 00:09), not the plugin:** SPEED2.EXE faulted at 0x513CCC (an
+access violation in the game's own code): the dealer works out which cars are locked from GlobalB's car-unlock table
+(0x838438, 12-byte entries: car type hash, two race hashes) and looks each car type up with 0x610130, which gave 0 for
+one, read at +0x840. The laptop's game data is the desktop's (the same GlobalB.lzc and GLOBALA.BUN, add-on cars in it)
+but it had no NFSU2Unlimiter (nor NFSU2_StanceMod), so the add-on cars were never made car types. Fixed by copying the
+desktop's NFSU2Unlimiter.asi, its settings, UnlimiterData and NFSU2_StanceMod to the laptop (00:25, by USB, every
+file's SHA-256 checked); the laptop also got the ToHost plugin build then. Not tried in the game yet. Both PCs need the
+same mods: different car data breaks the dealer, and friends' cars would wear parts the other game lacks.
+
 **To do, seen in the second test:** opening the car's doors (the game's door/hatch animation, standing still in free
 roam) opens the doors of every player's car on that screen too, and the other player's screen shows none of it: the
 door state is the game's own for all cars of that model (both are COROLLAs) and is not sent. Fix: keep the doors to
