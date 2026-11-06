@@ -273,9 +273,10 @@ shared code still takes more, we just do not build or test for it.)
 **Installed (2026-11-06 17:44):** the step-5 plugin (502,272 bytes, the same bytes as `out/win/NFSU2FreeRoam.asi`) in
 `C:\Games\NFSU2-online\scripts`; the phase-4 plugin and .ini kept as `out/win/backup/NFSU2FreeRoam.phase4.*`. The test
 copy's .ini got `Servers = local=ws://127.0.0.1:8691/lan, lan=ws://192.168.0.109:8691/lan`, `ServerKey = F8`,
-`Labels = 1`, `JoinKey = J`, `FarJoin = 1`, `Partner = rishilaptop` (Room stays empty: the laptop's .ini has none
-either). **The laptop still has the phase-4 plugin:** copy `out/win/dist/scripts/NFSU2FreeRoam.asi` over its
-`scripts\NFSU2FreeRoam.asi` and add `Partner = Rishi` (the desktop's Name) and `JoinKey = J` to its .ini.
+`Labels = 1`, `JoinKey = J`, `FarJoin = 1`, `Partner = RishiLaptop` (Room stays empty: the laptop's .ini has none
+either). **The laptop still has the phase-4 plugin:** copy both files in `C:devlaptop-update` (the plugin and a full
+.ini: Name = RishiLaptop, Server = ws://192.168.0.109:8691/lan, Online = 1, Partner = Rishi, JoinKey = J) over its
+`scripts` folder. Names compare case-insensitively (Partner, lobbies, the server's claims); they show as typed.
 
 **To try in the game, in this order** (the player; the log lines to look for in `scripts\NFSU2FreeRoam.log`):
 1. Start: `HUD hook: 0x006005e0 now jumps to the plugin`, `the exe's LoadLibraryA goes through the plugin`,
