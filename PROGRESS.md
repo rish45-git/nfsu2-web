@@ -274,7 +274,7 @@ shared code still takes more, we just do not build or test for it.)
 `C:\Games\NFSU2-online\scripts`; the phase-4 plugin and .ini kept as `out/win/backup/NFSU2FreeRoam.phase4.*`. The test
 copy's .ini got `Servers = local=ws://127.0.0.1:8691/lan, lan=ws://192.168.0.109:8691/lan`, `ServerKey = F8`,
 `Labels = 1`, `JoinKey = J`, `FarJoin = 1`, `Partner = RishiLaptop` (Room stays empty: the laptop's .ini has none
-either). **The laptop still has the phase-4 plugin:** copy both files in `C:devlaptop-update` (the plugin and a full
+either). **The laptop still has the phase-4 plugin:** copy both files in `C:\dev\laptop-update` (the plugin and a full
 .ini: Name = RishiLaptop, Server = ws://192.168.0.109:8691/lan, Online = 1, Partner = Rishi, JoinKey = J) over its
 `scripts` folder. Names compare case-insensitively (Partner, lobbies, the server's claims); they show as typed.
 
