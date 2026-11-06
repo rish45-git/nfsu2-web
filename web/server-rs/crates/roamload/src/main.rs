@@ -307,13 +307,23 @@ fn hello(id: u32, seq: u16, name: &str, room: u32, status: u8) -> Vec<u8> {
     finish(w)
 }
 
+/// NFSU2_BOT_CENTER="x,y,z": the middle of the square the bots drive in (default 0,0,10), to put them where a real
+/// game's car is (the free-roam hub only links players near each other), e.g. 1695,-883,24 for the career's start
+fn center() -> (f64, f64, f64) {
+    static C: std::sync::OnceLock<(f64, f64, f64)> = std::sync::OnceLock::new();
+    *C.get_or_init(|| {
+        let v: Vec<f64> = std::env::var("NFSU2_BOT_CENTER").unwrap_or_default().split(',').filter_map(|x| x.trim().parse().ok()).collect();
+        if v.len() == 3 { (v[0], v[1], v[2]) } else { (0.0, 0.0, 10.0) }
+    })
+}
+
 /// where bot n drives: the centre of its circle and where on it it starts (a fixed scatter over the square)
 fn place(n: usize, spread: f64) -> (f64, f64, f64) {
     let h = |k: u64| {
         ((n as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(k).wrapping_mul(0xBF58_476D_1CE4_E5B9) >> 11) as f64
             / (1u64 << 53) as f64
     };
-    ((h(1) - 0.5) * spread, (h(2) - 0.5) * spread, h(3) * std::f64::consts::TAU)
+    ((h(1) - 0.5) * spread + center().0, (h(2) - 0.5) * spread + center().1, h(3) * std::f64::consts::TAU)
 }
 
 /// bot n's state at its clock t_us, as its SNAP carries it: a car going round its circle of 40 m at 15 m/s, its
@@ -330,7 +340,7 @@ fn state(n: usize, t_us: u32, spread: f64) -> [u8; STATE] {
         w += b.len();
     };
     put(&t_us.to_le_bytes());
-    for x in [cx + 40.0 * a.cos(), cy + 40.0 * a.sin(), 10.0 + 0.05 * (t * 3.0).sin()] {
+    for x in [cx + 40.0 * a.cos(), cy + 40.0 * a.sin(), center().2 + 0.05 * (t * 3.0).sin()] {
         put(&(x as f32).to_le_bytes());
     }
     for x in [-15.0 * a.sin(), 15.0 * a.cos(), 0.15 * (t * 3.0).cos()] {

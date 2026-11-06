@@ -471,6 +471,7 @@ static void init_once(void){
 
 __declspec(dllexport) void InitializeASI(void){ init_once(); }
 
+volatile int roam_win_exiting;                   /* the process is ending (DLL_PROCESS_DETACH with reserved): roam_win.c */
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved){
     if (reason == DLL_PROCESS_ATTACH){
         g_self = (HMODULE)h;
@@ -484,6 +485,8 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved){
         /* at process exit every other thread is gone already; if the network
          * thread died holding the session lock, skip the report (and the
          * BYE: friends drop this car after 2 s anyway) */
+        /* (online: no WinHTTP call from here on: its threads are gone too, and webio.dll fail-fasts) */
+        if (reserved) roam_win_exiting = 1;
         if (g_ready && !g_dead){ g_dead = 1; if (roam_plat_quiesced()) roam_game_report(); }
         if (g_x87_popped) roam_log("[roam] %u float result(s) of game functions popped off the x87 stack\n", g_x87_popped);
         roam_log("[roam] unloaded%s\n", reserved ? " (game exit)" : "");

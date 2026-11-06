@@ -347,6 +347,12 @@ int roam_plat_start(const roam_plat_cfg *cfg, rc_session *s){
  * exit Windows has already stopped every other thread) */
 void roam_plat_stop(uint8_t reason){
     if (g_online){
+        extern volatile int roam_win_exiting;
+        if (roam_win_exiting){                    /* process exit: every thread of ours and WinHTTP's is gone; the server
+                                                   * drops this player after a few seconds without us */
+            g_stop = 1; g_sw = 0; g_online = 0;
+            return;
+        }
         mu_init();
         if (TryEnterCriticalSection(&g_mu)){ rc_shutdown(g_s, reason); LeaveCriticalSection(&g_mu); }   /* BYE to the hub and peers */
         g_stop = 1;
