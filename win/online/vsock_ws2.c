@@ -39,10 +39,89 @@ static void api_init(void){
 }
 void guest_wait_begin(void){ LeaveCriticalSection(&g_api); }
 void guest_wait_end(void){ EnterCriticalSection(&g_api); }
-#define API_IN()   do { api_init(); EnterCriticalSection(&g_api); } while (0)
-#define API_OUT()  LeaveCriticalSection(&g_api)
 
 static uint64_t st_sockets, st_sent, st_recv, st_bytes_out, st_bytes_in, st_select, st_waits, st_dns_refused;
+
+/* ---- what the game calls (diagnostics: vs_calls_tick, vs_calls_report) ----
+ * Per function: calls, calls while no network session is open (before the first WSAStartup or after the last
+ * WSACleanup: they fail at once with WSANOTINITIALISED, as on Windows), the time spent in them, the longest one, and
+ * the first few threads that called (id and priority: a DirtySock thread runs at a high one).  Lock-free (32-bit
+ * interlocked counters), reset at each report. */
+enum { F_ACCEPT, F_BIND, F_CLOSESOCKET, F_CONNECT, F_GETPEERNAME, F_GETSOCKNAME, F_GETSOCKOPT, F_IOCTLSOCKET, F_LISTEN,
+       F_RECV, F_RECVFROM, F_SELECT, F_SEND, F_SENDTO, F_SETSOCKOPT, F_SHUTDOWN, F_SOCKET, F_GETHOSTBYNAME,
+       F_GETHOSTNAME, F_WSAGETLASTERROR, F_WSASETLASTERROR, F_WSASTARTUP, F_WSACLEANUP, F_WSAIOCTL, F_NETBIOS, F_N };
+static const char *const k_fn[F_N] = {
+    "accept", "bind", "closesocket", "connect", "getpeername", "getsockname", "getsockopt", "ioctlsocket", "listen",
+    "recv", "recvfrom", "select", "send", "sendto", "setsockopt", "shutdown", "socket", "gethostbyname",
+    "gethostname", "WSAGetLastError", "WSASetLastError", "WSAStartup", "WSACleanup", "WSAIoctl", "Netbios" };
+static int g_startups;                    /* WSAStartup reference count (below, with the socket table) */
+#define CALL_TIDS 4
+static struct {
+    volatile LONG calls, nosess, us, max_us;
+    volatile LONG tid[CALL_TIDS], prio[CALL_TIDS];
+} C[F_N];
+static volatile LONG g_calls_nosess;                  /* since the last report, all functions */
+static uint64_t g_calls_since;                        /* the start of the period calls_report covers */
+static void call_in(int f){
+    if (!g_calls_since) g_calls_since = ws_now_us();
+    InterlockedIncrement(&C[f].calls);
+    if (!g_startups && f != F_WSASTARTUP && f != F_NETBIOS){ InterlockedIncrement(&C[f].nosess); InterlockedIncrement(&g_calls_nosess); }
+    LONG tid = (LONG)GetCurrentThreadId();
+    for (int k = 0; k < CALL_TIDS; k++){
+        LONG t = C[f].tid[k];
+        if (t == tid) break;
+        if (!t && InterlockedCompareExchange(&C[f].tid[k], tid, 0) == 0){
+            InterlockedExchange(&C[f].prio[k], (LONG)GetThreadPriority(GetCurrentThread()));
+            break;
+        }
+    }
+}
+static void call_out(int f, uint64_t t0){
+    uint64_t d = ws_now_us() - t0;
+    LONG us = d > 0x7FFFFFFFull ? 0x7FFFFFFF : (LONG)d;
+    LONG old = InterlockedExchangeAdd(&C[f].us, us);
+    if ((LONG)(old + us) < old) InterlockedExchange(&C[f].us, 0x7FFFFFFF);   /* saturate */
+    for (LONG m = C[f].max_us; us > m; m = C[f].max_us)
+        if (InterlockedCompareExchange(&C[f].max_us, us, m) == m) break;
+}
+/* one report of the calls since the last one (reset), over several lines if long; nothing if there were none */
+static void calls_report(const char *why){
+    uint64_t now = ws_now_us();
+    double secs = g_calls_since ? (double)(now - g_calls_since) / 1e6 : 0.0;
+    g_calls_since = now;
+    char line[1000]; int k = 0, lines = 0, any = 0;
+    for (int f = 0; f < F_N; f++){
+        LONG n = InterlockedExchange(&C[f].calls, 0);
+        LONG ns = InterlockedExchange(&C[f].nosess, 0), us = InterlockedExchange(&C[f].us, 0), mx = InterlockedExchange(&C[f].max_us, 0);
+        char th[120]; int tk = 0;
+        for (int t = 0; t < CALL_TIDS; t++){
+            LONG id = InterlockedExchange(&C[f].tid[t], 0), pr = C[f].prio[t];
+            if (id) tk += snprintf(th + tk, sizeof th - (size_t)tk, "%s%lx/%ld", tk ? " " : "", (unsigned long)id, (long)pr);
+        }
+        th[tk] = 0;
+        if (!n) continue;
+        char e[220], nsb[40] = "";
+        if (ns) snprintf(nsb, sizeof nsb, " (%ld no session)", (long)ns);
+        int el = snprintf(e, sizeof e, "%s %ld%s %.1f ms (max %.2f) [%s]", k_fn[f], (long)n, nsb, us / 1000.0, mx / 1000.0, th);
+        if (!any){ k = snprintf(line, sizeof line, "calls in %.0f s%s%s: ", secs, why ? ", " : "", why ? why : ""); any = 1; }
+        if (k + el + 2 >= (int)sizeof line){ ws_log("%s", line); lines++; k = snprintf(line, sizeof line, "  calls, more: "); }
+        k += snprintf(line + k, sizeof line - (size_t)k, "%s%s", k > 0 && line[k - 2] != ':' ? "; " : "", e);
+    }
+    if (any) ws_log("%s", line);
+    InterlockedExchange(&g_calls_nosess, 0);
+    (void)lines;
+}
+/* the writer thread, every pass: a report every 60 s while the game calls, every 10 s while it calls with no
+ * session open (the case being looked for: a thread that spins on calls that fail at once) */
+void vs_calls_tick(void){
+    uint64_t now = ws_now_us();
+    if (!g_calls_since){ g_calls_since = now; return; }
+    uint64_t el = now - g_calls_since;
+    int closed = !g_startups && g_calls_nosess;           /* calls now, with the session over (not before one) */
+    if (el >= 60000000ull || (el >= 10000000ull && closed)) calls_report(closed ? "with no session open" : 0);
+}
+void vs_calls_report(const char *why){ calls_report(why); }
+void vs_exit_report(void){ if (g_vs_tr) calls_report("at the game's exit"); }
 
 /* ---- small helpers ---- */
 uint64_t ws_now_us(void){
@@ -847,33 +926,45 @@ static UCHAR ws_netbios(uint8_t *ncb){
 /* the exported replacements                                                */
 /* ======================================================================= */
 #define W WSAAPI
-static SOCKET W vs_accept(SOCKET s, struct sockaddr *a, int *l){ API_IN(); SOCKET r = ws_accept(s, a, l); API_OUT(); return r; }
-static int W vs_bind(SOCKET s, const struct sockaddr *a, int l){ API_IN(); int r = ws_bind(s, a, l); API_OUT(); return r; }
-static int W vs_closesocket(SOCKET s){ API_IN(); int r = ws_closesocket(s); API_OUT(); return r; }
-static int W vs_connect(SOCKET s, const struct sockaddr *a, int l){ API_IN(); int r = ws_connect(s, a, l); API_OUT(); return r; }
-static int W vs_getpeername(SOCKET s, struct sockaddr *a, int *l){ API_IN(); int r = ws_getname(s, a, l, 1); API_OUT(); return r; }
-static int W vs_getsockname(SOCKET s, struct sockaddr *a, int *l){ API_IN(); int r = ws_getname(s, a, l, 0); API_OUT(); return r; }
-static int W vs_getsockopt(SOCKET s, int lv, int o, char *p, int *l){ API_IN(); int r = ws_getsockopt(s, lv, o, p, l); API_OUT(); return r; }
-static int W vs_ioctlsocket(SOCKET s, long c, u_long *p){ API_IN(); int r = ws_ioctlsocket(s, c, p); API_OUT(); return r; }
-static int W vs_listen(SOCKET s, int b){ API_IN(); int r = ws_listen(s, b); API_OUT(); return r; }
-static int W vs_recv(SOCKET s, char *b, int n, int f){ API_IN(); int r = do_recv(s, b, n, f, 0, 0, 0); API_OUT(); return r; }
-static int W vs_recvfrom(SOCKET s, char *b, int n, int f, struct sockaddr *a, int *l){ API_IN(); int r = do_recv(s, b, n, f, a, l, 1); API_OUT(); return r; }
-static int W vs_select(int nfds, fd_set *r_, fd_set *w_, fd_set *e_, const struct timeval *t){ (void)nfds; API_IN(); int r = ws_select(r_, w_, e_, t); API_OUT(); return r; }
-static int W vs_send(SOCKET s, const char *b, int n, int f){ API_IN(); int r = do_send(s, b, n, f, 0, 0, 0); API_OUT(); return r; }
-static int W vs_sendto(SOCKET s, const char *b, int n, int f, const struct sockaddr *a, int l){ API_IN(); int r = do_send(s, b, n, f, a, l, 1); API_OUT(); return r; }
-static int W vs_setsockopt(SOCKET s, int lv, int o, const char *p, int l){ API_IN(); int r = ws_setsockopt(s, lv, o, p, l); API_OUT(); return r; }
-static int W vs_shutdown(SOCKET s, int h){ API_IN(); int r = ws_shutdown(s, h); API_OUT(); return r; }
-static SOCKET W vs_socket(int a, int t, int p){ API_IN(); SOCKET r = ws_socket(a, t, p); API_OUT(); return r; }
-static struct hostent *W vs_gethostbyname(const char *n){ API_IN(); struct hostent *r = ws_gethostbyname(n); API_OUT(); return r; }
-static int W vs_gethostname(char *n, int l){ API_IN(); int r = ws_gethostname(n, l); API_OUT(); return r; }
-static int W vs_WSAGetLastError(void){ return (int)GetLastError(); }
-static void W vs_WSASetLastError(int e){ SetLastError((DWORD)e); }
-static int W vs_WSAStartup(WORD v, LPWSADATA d){ API_IN(); int r = ws_startup(v, d); API_OUT(); return r; }
-static int W vs_WSACleanup(void){ API_IN(); int r = ws_cleanup(); API_OUT(); return r; }
+/* each call: counted and timed (calls_report), then g_api held through it */
+#define IN_(f)   int f_ = (f); uint64_t t0_ = ws_now_us(); call_in(f_); api_init(); EnterCriticalSection(&g_api)
+#define OUT_()   LeaveCriticalSection(&g_api); call_out(f_, t0_)
+static SOCKET W vs_accept(SOCKET s, struct sockaddr *a, int *l){ IN_(F_ACCEPT); SOCKET r = ws_accept(s, a, l); OUT_(); return r; }
+static int W vs_bind(SOCKET s, const struct sockaddr *a, int l){ IN_(F_BIND); int r = ws_bind(s, a, l); OUT_(); return r; }
+static int W vs_closesocket(SOCKET s){ IN_(F_CLOSESOCKET); int r = ws_closesocket(s); OUT_(); return r; }
+static int W vs_connect(SOCKET s, const struct sockaddr *a, int l){ IN_(F_CONNECT); int r = ws_connect(s, a, l); OUT_(); return r; }
+static int W vs_getpeername(SOCKET s, struct sockaddr *a, int *l){ IN_(F_GETPEERNAME); int r = ws_getname(s, a, l, 1); OUT_(); return r; }
+static int W vs_getsockname(SOCKET s, struct sockaddr *a, int *l){ IN_(F_GETSOCKNAME); int r = ws_getname(s, a, l, 0); OUT_(); return r; }
+static int W vs_getsockopt(SOCKET s, int lv, int o, char *p, int *l){ IN_(F_GETSOCKOPT); int r = ws_getsockopt(s, lv, o, p, l); OUT_(); return r; }
+static int W vs_ioctlsocket(SOCKET s, long c, u_long *p){ IN_(F_IOCTLSOCKET); int r = ws_ioctlsocket(s, c, p); OUT_(); return r; }
+static int W vs_listen(SOCKET s, int b){ IN_(F_LISTEN); int r = ws_listen(s, b); OUT_(); return r; }
+static int W vs_recv(SOCKET s, char *b, int n, int f){ IN_(F_RECV); int r = do_recv(s, b, n, f, 0, 0, 0); OUT_(); return r; }
+static int W vs_recvfrom(SOCKET s, char *b, int n, int f, struct sockaddr *a, int *l){ IN_(F_RECVFROM); int r = do_recv(s, b, n, f, a, l, 1); OUT_(); return r; }
+static int W vs_select(int nfds, fd_set *r_, fd_set *w_, fd_set *e_, const struct timeval *t){ (void)nfds; IN_(F_SELECT); int r = ws_select(r_, w_, e_, t); OUT_(); return r; }
+static int W vs_send(SOCKET s, const char *b, int n, int f){ IN_(F_SEND); int r = do_send(s, b, n, f, 0, 0, 0); OUT_(); return r; }
+static int W vs_sendto(SOCKET s, const char *b, int n, int f, const struct sockaddr *a, int l){ IN_(F_SENDTO); int r = do_send(s, b, n, f, a, l, 1); OUT_(); return r; }
+static int W vs_setsockopt(SOCKET s, int lv, int o, const char *p, int l){ IN_(F_SETSOCKOPT); int r = ws_setsockopt(s, lv, o, p, l); OUT_(); return r; }
+static int W vs_shutdown(SOCKET s, int h){ IN_(F_SHUTDOWN); int r = ws_shutdown(s, h); OUT_(); return r; }
+static SOCKET W vs_socket(int a, int t, int p){ IN_(F_SOCKET); SOCKET r = ws_socket(a, t, p); OUT_(); return r; }
+static struct hostent *W vs_gethostbyname(const char *n){ IN_(F_GETHOSTBYNAME); struct hostent *r = ws_gethostbyname(n); OUT_(); return r; }
+static int W vs_gethostname(char *n, int l){ IN_(F_GETHOSTNAME); int r = ws_gethostname(n, l); OUT_(); return r; }
+/* the error code is the thread's own: these two take no lock (and must not change it: counting does not) */
+static int W vs_WSAGetLastError(void){ DWORD e = GetLastError(); call_in(F_WSAGETLASTERROR); SetLastError(e); return (int)e; }
+static void W vs_WSASetLastError(int e){ call_in(F_WSASETLASTERROR); SetLastError((DWORD)e); }
+static int W vs_WSAStartup(WORD v, LPWSADATA d){
+    IN_(F_WSASTARTUP); int r = ws_startup(v, d);
+    if (!r && g_startups == 1) InterlockedExchange(&g_calls_nosess, 0);   /* a session: "no session" counts from its end */
+    OUT_(); return r;
+}
+static int W vs_WSACleanup(void){
+    IN_(F_WSACLEANUP); int r = ws_cleanup(); int ended = !r && !g_startups; OUT_();
+    if (ended) calls_report("up to the last WSACleanup");     /* what came after it gets its own report */
+    return r;
+}
 static int W vs_WSAIoctl(SOCKET s, DWORD c, LPVOID i, DWORD il, LPVOID o, DWORD ol, LPDWORD ret, LPWSAOVERLAPPED ov,
                          LPWSAOVERLAPPED_COMPLETION_ROUTINE cr){
-    (void)cr; API_IN(); int r = ws_wsaioctl(s, c, i, il, o, ol, ret, ov); API_OUT(); return r; }
-static UCHAR W vs_Netbios(void *ncb){ API_IN(); UCHAR r = ws_netbios(ncb); API_OUT(); return r; }
+    (void)cr; IN_(F_WSAIOCTL); int r = ws_wsaioctl(s, c, i, il, o, ol, ret, ov); OUT_(); return r; }
+static UCHAR W vs_Netbios(void *ncb){ IN_(F_NETBIOS); UCHAR r = ws_netbios(ncb); OUT_(); return r; }
 
 const vs_import vs_imports[] = {
     { "ws2_32.dll", 1, "accept", (void *)vs_accept },           { "ws2_32.dll", 2, "bind", (void *)vs_bind },

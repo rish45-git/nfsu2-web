@@ -127,6 +127,8 @@ int  vfd_recv(int fd, void *buf, int len, int peek);
 int  vfd_shutdown(int fd, int how);            /* 1 SD_SEND, 2 SD_BOTH: FIN */
 int  vfd_close(int fd);
 int  winsock_session_active(void);             /* vsock_ws2.c */
+void vs_calls_tick(void);                      /* vsock_ws2.c: the call counters' report when due (the writer thread) */
+void vs_calls_report(const char *why);         /* ... now */
 
 /* ---- freestanding helpers (vsock.c) ---- */
 void *vs_alloc(size_t n);                      /* zeroed */

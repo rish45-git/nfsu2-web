@@ -136,6 +136,11 @@ struct VConn {
     VSock *listener; VConn *acc_next;       /* waiting in a listener's accept queue */
     uint64_t deadline;                      /* SYN_SENT: give up then */
     int vfd;
+    /* diagnostics (conn_report): bytes each way, and when the game last polled it for reading, called recv on it,
+     * and got data from it; stall_said: "unread for 20 s" logged */
+    uint64_t t0, polled_rd, recv_call, read_at;
+    uint32_t bytes_in, bytes_out;
+    int stall_said;
 };
 static VConn *g_conns;
 
@@ -252,6 +257,7 @@ static VConn *conn_new(uint32_t lip, uint16_t lport, uint32_t rip, uint16_t rpor
     k->vfd = vfd_new(VF_STREAM, k);
     if (k->vfd < 0){ vs_free(k); return 0; }
     k->lip = lip; k->lport = lport; k->rip = rip; k->rport = rport; k->cid = cid; k->state = state;
+    k->t0 = now_us();
     k->next = g_conns; if (g_conns) g_conns->prev = k; g_conns = k;
     return k;
 }
@@ -481,7 +487,7 @@ static void rx_frame(const RxFrame *sl){
                 send_rst(k); got_rst(k);
                 break;
             }
-            S.tcp_bytes_in += (uint64_t)pn;
+            S.tcp_bytes_in += (uint64_t)pn; k->bytes_in += (uint32_t)pn;
             break;
         case NET_LAN_TCP_FIN:
             if (k) k->rx_fin = 1;
@@ -529,6 +535,39 @@ static void stats_line(const char *when){
            (unsigned long long)S.tx_full, (unsigned long long)S.ctl_waited, (unsigned long long)S.ctl_lost,
            (unsigned long long)S.tx_offline, (unsigned long long)S.tx_old_link);
 }
+/* every remote TCP connection: how long, bytes each way, unread, and when the game last polled, called recv, read
+ * (g_mu held) */
+static const char *ago(uint64_t now, uint64_t t, char *b){
+    if (!t){ snprintf(b, 24, "never"); return b; }
+    snprintf(b, 24, "%.1f s ago", (double)(now - t) / 1e6); return b;
+}
+static void conn_report(void){
+    uint64_t now = now_us();
+    for (VConn *k = g_conns; k; k = k->next){
+        if (k->local || k->state != C_EST) continue;
+        char ip[16], a1[24], a2[24], a3[24];
+        ws_log("virtual LAN: tcp to %s:%u for %.0f s: in %u B, out %u B, unread %u B%s; polled for reading %s, recv %s, "
+               "data read %s", ipn(k->rip, ip), k->rport, (double)(now - k->t0) / 1e6, k->bytes_in, k->bytes_out, k->rlen,
+               k->rx_fin ? " (closed by the other end)" : k->rx_rst ? " (reset)" : "",
+               ago(now, k->polled_rd, a1), ago(now, k->recv_call, a2), ago(now, k->read_at, a3));
+    }
+}
+/* data that waits unread for 20 s: said once, when it happens (the writer thread; g_mu held) */
+#define STALL_US 20000000ull
+static void stall_check(void){
+    uint64_t now = now_us();
+    for (VConn *k = g_conns; k; k = k->next){
+        if (k->local || k->state != C_EST || !k->rlen || k->stall_said) continue;
+        uint64_t since = k->read_at > k->t0 ? k->read_at : k->t0;
+        if (now - since < STALL_US) continue;
+        k->stall_said = 1;
+        char ip[16], a1[24], a2[24];
+        ws_log("virtual LAN: tcp to %s:%u: %u B unread for %.0f s (polled for reading %s, recv %s): the game is not "
+               "reading this connection", ipn(k->rip, ip), k->rport, k->rlen, (double)(now - since) / 1e6,
+               ago(now, k->polled_rd, a1), ago(now, k->recv_call, a2));
+    }
+}
+
 void vs_report(void){
     if (!g_inited) return;
     EnterCriticalSection(&g_mu);
@@ -605,9 +644,11 @@ static DWORD WINAPI writer_main(LPVOID u){
         if (g_ctlq_n) ctl_flush();                        /* control frames that waited for room */
         uint64_t t = now_us(); int stats = 0;
         if (t >= next_stats){ next_stats = t + 60000000ull; stats = g_hello && winsock_session_active(); }
-        if (stats) stats_line("stats");
+        if (stats){ stats_line("stats"); conn_report(); }
+        stall_check();
         LeaveCriticalSection(&g_mu);
         if (sent) bump();
+        vs_calls_tick();                                  /* the game's calls (vsock_ws2.c), when a report is due */
     }
     return 0;
 }
@@ -989,6 +1030,7 @@ static short revents_of(int fd, short ev){
         if (k->state != C_EST) return VP_ERR;                    /* refused / no answer */
         /* events 0: the caller waits for a connect's outcome: the connection is complete */
         if (!ev) return VP_OUT;
+        if (ev & VP_IN) k->polled_rd = now_us();
         if (k->rlen || k->rx_fin || k->rx_rst) r |= VP_IN;
         if (k->rx_rst) r |= VP_HUP;
         else if (k->local ? k->peer && k->peer->rlen < LOCAL_CAP : online() && tx_free() > TX_RESERVE) r |= VP_OUT;
@@ -1033,7 +1075,7 @@ int vfd_send(int fd, const void *buf, int len){
             uint32_t m = (uint32_t)len < room ? (uint32_t)len : room;
             if (!m && len) err = VE_WOULDBLOCK;
             else if (!rb_put(pk, buf, m, LOCAL_CAP)) err = VE_NOBUFS;
-            else r = (int)m;
+            else { r = (int)m; k->bytes_out += m; }
         }
     } else {
         uint32_t fr = online() ? tx_free() : 0, freeslots = fr > TX_RESERVE ? fr - TX_RESERVE : 0;
@@ -1044,7 +1086,7 @@ int vfd_send(int fd, const void *buf, int len){
             off += m; freeslots--;
         }
         if (!off && len) err = VE_WOULDBLOCK;
-        else { r = off; S.tcp_bytes_out += (uint64_t)off; }
+        else { r = off; S.tcp_bytes_out += (uint64_t)off; k->bytes_out += (uint32_t)off; }
     }
     LeaveCriticalSection(&g_mu);
     if (r > 0) bump();
@@ -1055,8 +1097,10 @@ int vfd_recv(int fd, void *buf, int len, int peek){
     EnterCriticalSection(&g_mu);
     VConn *k = stream_of(fd);
     int r = -1, err = 0, freed = 0;
+    if (k) k->recv_call = now_us();
     if (!k) err = VE_NOTSOCK;
     else if (k->rlen){
+        k->read_at = k->recv_call; k->stall_said = 0;
         uint32_t m = (uint32_t)len < k->rlen ? (uint32_t)len : k->rlen;
         memcpy(buf, k->rb + k->roff, m);
         if (!peek){ k->roff += m; k->rlen -= m; if (!k->rlen) k->roff = 0; freed = k->local; }

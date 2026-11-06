@@ -549,6 +549,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved){
         /* (online: no WinHTTP call from here on: its threads are gone too, and webio.dll fail-fasts) */
         if (reserved) roam_win_exiting = 1;
         if (g_ready && !g_dead){ g_dead = 1; if (roam_plat_quiesced()) roam_game_report(); }
+        vs_exit_report();                          /* the game's Winsock calls since the last report (no lock) */
         if (g_x87_popped) roam_log("[roam] %u float result(s) of game functions popped off the x87 stack\n", g_x87_popped);
         roam_log("[roam] unloaded%s\n", reserved ? " (game exit)" : "");
         if (g_log != INVALID_HANDLE_VALUE){ CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

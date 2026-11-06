@@ -38,6 +38,7 @@ void vs_rx_frame(const uint8_t *f, int len);     /* a binary frame of kind 3, 4 
 void vs_peer_gone(uint32_t vip);                 /* a peer delta's "gone": its TCP connections are reset */
 int  vs_session_active(void);                    /* a WSAStartup without its last WSACleanup */
 void vs_report(void);                            /* the counters, one log line */
+void vs_exit_report(void);                       /* the game's calls since the last report (at exit: no lock taken) */
 
 /* The replacements, as the game imports them (ws2_32 by ordinal, WSAIoctl by name, netapi32!Netbios). */
 typedef struct { const char *dll; int ord; const char *name; void *fn; } vs_import;

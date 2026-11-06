@@ -60,7 +60,14 @@ static void tr_want(void *u){
     g_sw = sw_start(&o, &cb);
     printf("  [want] the switch starts: %s\n", g_sw ? "ok" : "FAILED");
 }
-static void tr_log(void *u, const char *l){ (void)u; printf("  [vsock] %s\n", l); }
+/* the diagnostics' lines the checks below wait for */
+static volatile LONG g_saw_stall, g_saw_nosess, g_saw_cleanup_calls;
+static void tr_log(void *u, const char *l){
+    (void)u; printf("  [vsock] %s\n", l);
+    if (strstr(l, "the game is not reading this connection") && strstr(l, ":20920")) InterlockedExchange(&g_saw_stall, 1);
+    if (strstr(l, "with no session open") && strstr(l, "select ")) InterlockedExchange(&g_saw_nosess, 1);
+    if (strstr(l, "up to the last WSACleanup") && strstr(l, "WSACleanup 1")) InterlockedExchange(&g_saw_cleanup_calls, 1);
+}
 static const vs_transport TR = { tr_send, tr_lan, tr_want, tr_log, 0 };
 
 static int fails;
@@ -264,8 +271,41 @@ int main(int argc, char **argv){
     DWORD w = WaitForSingleObject(th, 2000);
     CHECK("closesocket wakes it: SOCKET_ERROR, WSAEINTR", w == WAIT_OBJECT_0 && g_blk_r == SOCKET_ERROR && g_blk_e == WSAEINTR);
 
+    /* diagnostics: data the game leaves unread is reported after 20 s, once */
+    {
+        SOCKET u = psocket(AF_INET, SOCK_STREAM, 0);
+        struct sockaddr_in ra = sin_(IP(10, 77, 0, 1), 20920);
+        int ok = pconnect(u, SA(ra), sizeof ra) == 0;
+        char m2[256]; int l2 = aries(m2, "@dir", "PROD=NFS-PC-2005\n");
+        ok = ok && psend(u, m2, l2, 0) == l2;
+        printf("  waiting up to 22 s with the @dir answer unread ...\n");
+        for (int i = 0; i < 220 && !g_saw_stall; i++) Sleep(100);
+        CHECK("no \"with no session open\" report during the session", !g_saw_nosess);
+    CHECK("an answer left unread for 20 s is reported (\"not reading this connection\")", ok && g_saw_stall);
+        pclosesocket(u);
+    }
+
     CHECK("WSACleanup", pWSACleanup() == 0);
+    CHECK("the calls up to the last WSACleanup are reported", g_saw_cleanup_calls);
     vs_report();
+    /* diagnostics: a thread that spins on select with no session open (every call fails at once) is reported
+     * within about 10 s */
+    {
+        InterlockedExchange(&g_saw_nosess, 0);             /* this spin's own report, not an earlier line */
+        fd_set R; FD_ZERO(&R); FD_SET((SOCKET)0x1004, &R);
+        struct timeval tv = { 0, 100000 };
+        long n = 0; DWORD t1 = GetTickCount();
+        int fast = 1;
+        while (GetTickCount() - t1 < 11500 && !g_saw_nosess){
+            DWORD c0 = GetTickCount();
+            if (pselect(0, &R, 0, 0, &tv) != SOCKET_ERROR || pWSAGetLastError() != WSANOTINITIALISED) fast = 0;
+            if (GetTickCount() - c0 > 50) fast = 0;   /* it must fail at once, not wait its timeout */
+            n++;
+        }
+        printf("  %ld selects with no session in %lu ms\n", n, GetTickCount() - t1);
+        CHECK("select with no session fails at once with WSANOTINITIALISED", fast);
+        CHECK("a spin on select with no session is reported (\"with no session open\")", g_saw_nosess);
+    }
     Sleep(300);                                              /* the writer tells the switch LAN play is shut */
     printf(fails ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", fails);
     if (g_sw) sw_stop(g_sw);

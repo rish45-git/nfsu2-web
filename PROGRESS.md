@@ -146,13 +146,43 @@ stance): drive stock cars online, or disable them in the test copy.
   listenport=8691; Remove-NetFirewallRule -DisplayName "NFSU2 server (LAN)"`.
 - **Result (the player, photos):** the laptop joined the desktop's room; chat both ways; a race on Palomino & 16th,
   both in RX-8s: name tags over the other car, live positions (1st/2nd and the gap) on both; both showed the same
-  Event Results (rishilaptop 4:04.65, rishi 4:34.65); both back in the Game Session Lobby with "Players Online: 2".
+  Event Results (rishilaptop 4:04.65, rishi 4:34.65: exactly +30.00 s, the game's time limit after the first finisher;
+  the server logged `1 rishilaptop 4:04.71, DNF rishi (out of time)`); both back in the Game Session Lobby with "Players Online: 2".
   Desktop at 180 fps, laptop at 60 fps: no desync seen.
 - **The desktop plugin's log:** after the room, the game bound UDP 3658; at the end 5585 datagrams out, 10741 in over
   the switch, 1 "no port" (a stray while the race socket was closed), 0 queue full; TCP 0 resets, 0 refused, 0 timed
   out, 0 link resets; TX ring never full, 0 offline, 0 for an old link; ICMP 16 out, 17 in, and 1 echo from the laptop
   answered by the stack (player-to-player pings). After the race the lobby link opened again (20920, 20922). No crash
   dump.
+- **Open: the desktop's lobby link went silent after the race.** Back in the lobby (new lobby connection 13:50:42),
+  its TCP bytes out stopped at 5302 from 13:53:19 to 14:00 while bytes in still grew to 14925 (the server's pings
+  arrived) and the game loop kept running (free roam's frame counts unchanged); the server logged `"rishi": dropped:
+  silent for 125 s`. Either the game did not read the lobby socket or read it and did not answer; the log cannot
+  tell (no per-connection read/unread figures yet). **The desktop game was in the background then** (the player was
+  typing here): most likely the game stops servicing its lobby link while it is not the active window (it kept
+  drawing frames), so the server's 125 s silence limit dropped it; the game's behaviour, not the plugin's. The
+  per-connection report below shows it directly next time ("... unread for 20 s ... not reading this connection").
+- **Open: the laptop at quit** (the player): "are you sure you want to quit?" at about 3 fps for a while, then 60 fps
+  and a clean exit. Not a missing close from the server: its host answers the game's FIN with its own at once
+  (vhost.rs on_end -> conn_end), and vsprobe checks that the stack hands that FIN to the game. **The laptop's log:**
+  about 2035 frames per 30 s (68 fps) until 14:00:38; at 14:01:04 a connect to 13505 (EA Messenger), then the game's
+  WSACleanup (the session ended cleanly); then 1426 frames to 14:01:13 and **48 frames from 14:01:13 to 14:02:25**
+  (under 1 fps); exit 14:02:33, unloaded cleanly. The plugin's own frame step stayed small (mean 6.7 us, max 58 us)
+  and free roam's thread kept talking to the hub, so not the frame hook. Guess, unproven: after the last WSACleanup
+  every call fails at once (WSANOTINITIALISED, as on Windows), and a DirtySock thread at a high priority that loops on
+  select spins instead of waiting, starving the laptop's render thread (the desktop has 32 hardware threads). Next:
+  the same logoff and quit on the laptop with the diagnostics below.
+- **Diagnostics in the plugin (2026-11-06, 331,776 bytes, asi_check PASS, in the test copy and `out/win/dist`):**
+  - `[lan] calls in N s: <function> <calls> (<n> no session) <ms in it> ms (max <ms>) [<thread id>/<priority> ...]`
+    every 60 s while the game calls Winsock, at the last WSACleanup ("up to the last WSACleanup"), at exit, and every
+    10 s while the game calls with its session over ("with no session open"). Priority as GetThreadPriority says it
+    (0 normal, 2 highest, 15 time critical). A spinning thread shows as millions of calls with "no session".
+  - `[lan] virtual LAN: tcp to <vip>:<port> for N s: in/out bytes, unread, polled for reading / recv / data read
+    N s ago` for every remote connection with each 60 s stats line, and once, when it happens, `... N B unread for
+    20 s (polled for reading ..., recv ...): the game is not reading this connection`.
+  - vsprobe (now 38 checks, all pass) checks them: an @dir answer left unread is reported after 20 s; no "no session"
+    report during a session; the calls up to WSACleanup reported; a thread spinning on select after WSACleanup
+    (about 97 million calls in 10 s on this PC, each failing at once with WSANOTINITIALISED) reported within 10 s.
 - **Not tried yet:** a browser player in the same race (needs the browser build), 3 or more players, drift and the
   other race types, a long session, a quit right after a race; the laptop's own log was not read.
 
