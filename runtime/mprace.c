@@ -86,16 +86,23 @@
  *    saves it; then free roam at the spot.
  *  - A dialog: its handle [0x838974] (0 none), its text 0x838640.
  */
+#ifdef ROAM_HOST_WIN
+/* the Windows plugin (win/roam_asi): the original game's own memory and code, the plugin's log and options */
+#include "mprace_host_win.h"
+#else
 #include "cpu.h"
+#endif
 #include "mprace.h"
 #include "mpcredit.h"
 #include "racenet.h"
+#ifndef ROAM_HOST_WIN
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#endif
 
 long autotest_frame(void);
 const char *autotest_top_fng(void);
@@ -272,6 +279,9 @@ static void clk_step(void){
 static long clk(void){ return (long)(g_clk_us / 16667u); }
 static int okm(uint32_t a, uint32_t n){ return a && mem_is_committed(a) && mem_is_committed(a + n); }
 static uint32_t rd(uint32_t a){ return okm(a, 3) ? MR32(a) : 0; }
+#ifdef ROAM_HOST_WIN
+static uint32_t call(CPU *c, uint32_t fn, uint32_t ecx, int n, const uint32_t *arg){ (void)c; return roam_win_call(fn, ecx, 0, n, arg); }
+#else
 static uint32_t call(CPU *c, uint32_t fn, uint32_t ecx, int n, const uint32_t *arg){
     CPU save = *c;
     c->esp = (c->esp - 512u) & ~15u;
@@ -283,6 +293,7 @@ static uint32_t call(CPU *c, uint32_t fn, uint32_t ecx, int n, const uint32_t *a
     *c = save;
     return r;
 }
+#endif
 static void gs(uint32_t a, const char *s, uint32_t cap){
     uint32_t i = 0;
     for (; s[i] && i + 1 < cap; i++) MR8(a + i) = (uint8_t)s[i];
@@ -831,19 +842,34 @@ int mprace_car_ok(void){ return garage_find(G_FECARS, rd(G_CAREER_CAR)) != 0; }
  * once, or held back until the screen's next 0xE1FDE1D1) is the player
  * quitting it, for the fee; then the game's own handler, as always.  The
  * vtable is its only caller, so a patch of its entry sees every message. */
-void sub_004c2170(CPU *c);
-void dispatch_patch(uint32_t a, void (*f)(CPU *));
 static void quit_tell(void);
-static void pause_msg(CPU *c){
-    uint32_t m = MR32(c->esp + 4u);
+static void pause_seen(uint32_t self, uint32_t m){
     if (M.phase == MPR_RACE && !M.results_at && !M.quit_race
-        && (m == MSG_QUIT_YES || (m == MSG_PAUSE_LATER && rd(c->ecx + PAUSE_HELD) == MSG_QUIT_YES))){
+        && (m == MSG_QUIT_YES || (m == MSG_PAUSE_LATER && rd(self + PAUSE_HELD) == MSG_QUIT_YES))){
         M.quit_race = 1;
         mlog("the player quits the race (its pause menu's Quit%s)", m == MSG_QUIT_YES ? "" : ", held back");
         quit_tell();                                                     /* (the others: before the race is torn down) */
     }
+}
+#ifdef ROAM_HOST_WIN
+/* the original game: UI_Pause's vtable entry (0x797CB8 slot 0, its only caller) goes through here */
+#define VT_PAUSE        0x00797cb8u
+typedef uint32_t (__attribute__((thiscall)) *pause_fn)(uint32_t self, uint32_t msg, uint32_t obj, uint32_t a3, uint32_t a4);
+static pause_fn g_pause_orig;
+static uint32_t __attribute__((thiscall)) pause_msg_win(uint32_t self, uint32_t msg, uint32_t obj, uint32_t a3, uint32_t a4){
+    pause_seen(self, msg);
+    return g_pause_orig(self, msg, obj, a3, a4);
+}
+int roam_win_vtpatch(uint32_t slot, uint32_t want, uint32_t fn);        /* mprace_win.c: 1 patched */
+#define dispatch_patch(a, f) do { if (roam_win_vtpatch(VT_PAUSE, (a), (uint32_t)(uintptr_t)pause_msg_win)) g_pause_orig = (pause_fn)(uintptr_t)(a); } while (0)
+#else
+void sub_004c2170(CPU *c);
+void dispatch_patch(uint32_t a, void (*f)(CPU *));
+static void pause_msg(CPU *c){
+    pause_seen(c->ecx, MR32(c->esp + 4u));
     sub_004c2170(c);
 }
+#endif
 
 /* ---- the race in the career, and the prize money -------------------------------------------- */
 /* A race that counts in the player's career (MpRace.credit: roam_game.c

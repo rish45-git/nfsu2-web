@@ -238,6 +238,18 @@ shared code still takes more, we just do not build or test for it.)
   a second process joined it over the switch** (`srvprobe join`, through 192.168.0.109: TCP connect accepted); clean
   StopServer and WSACleanup. Before the ordinal fix it ran on the real network (`addr=172.24.192.1`), which is what the
   game would have done. Not tried: hosting from the game's LAN menu (by hand) with the laptop joining.
+- Step 3 (commit "Phase 6 step 3"): runtime/mprace.c builds into the plugin unchanged but for `#ifdef ROAM_HOST_WIN`
+  at its includes, its `call` (roam_win_call) and the pause menu's hook (`pause_seen`, shared; natively UI_Pause's
+  vtable 0x797CB8 entry 0 goes through `pause_msg_win`, a thiscall). `win/roam_asi/mprace_host_win.h` gives it the
+  port's names (the log, getenv = the options, the clock, libm); `win/roam_asi/mprace_win.c` the rest: the FE screens
+  (the FE manager's package lists), key taps (roam_keys.c), the car database lookup, the vtable patch, the career
+  credit's core (event entry, prize, margin, RaceWon, the open races: the port's mpcredit.c without its sponsor
+  offers and movie, which need the port's texts; the game offers sponsors at the next race), stand-ins for the
+  browser's race statistics and quit datagrams (none: a quitter's fee stays, the others are not told). mprace_frame
+  and mpcredit_frame run each frame; the player's keys are muted while the trip drives (`mprace_owns_input`). The
+  plugin is 414,720 bytes: `asi_check.py`'s limit is now 512 KB (was 384). `out/win/mathtest.exe`: the plugin's
+  logf/expf/powf/floorf against the C library's, 24,343 values, all exact (0 ulps). Nothing starts a trip yet (the
+  lobby is step 4).
 
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two

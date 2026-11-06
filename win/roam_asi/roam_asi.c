@@ -46,6 +46,10 @@ int  snprintf(char *buf, size_t n, const char *fmt, ...);
 typedef struct CPU CPU;                           /* the port's guest CPU: always 0 here */
 void roam_game_frame(CPU *c);                     /* runtime/roam_game.c */
 void roam_game_hud(CPU *c);
+void mprace_frame(CPU *c);                        /* runtime/mprace.c */
+int  mprace_owns_input(void);
+void mpcredit_frame(CPU *c);                      /* mprace_win.c */
+void roam_keys_mute(int on);
 void roam_keys_frame(void);                       /* roam_keys.c */
 int  roam_keys_vk(const char *s);
 void roam_keys_hotkey(int vk, void (*fn)(void), const char *what);
@@ -406,6 +410,9 @@ void roam_asi_frame(void){
     if (g_test_fault_seh > 0 && g_frame == g_test_fault_seh){ uint32_t a = 0; roam_win_call(0x005EBA30u, g_test_fault_ptr, 0, 1, &a); }
     roam_win_poll();                              /* NetThread = 0, or no thread: receive here */
     roam_keys_frame();                            /* the hotkeys; the game's keyboard hooked (roam_keys.c) */
+    mprace_frame(0);                              /* a race trip from free roam (runtime/mprace.c), its career win */
+    mpcredit_frame(0);
+    roam_keys_mute(mprace_owns_input());          /* (the trip drives the game's menus: the player's keys wait) */
     roam_game_frame(0);
     roam_win_server_frame();
     g_guard = 0;
