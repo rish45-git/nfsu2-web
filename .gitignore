@@ -19,3 +19,19 @@ __pycache__/
 *.o
 *.log
 .DS_Store
+
+# native-online branch: EA game files must never be committed, wherever they are put
+/gamedata/
+SPEED2.EXE
+[Ss]erver.dll
+[Ss]erver.cfg
+*.BUN
+*.BIN
+*.LZC
+*.VP6
+*.ASF
+*.MUS
+*.FNG
+# test logs and settings written by the native plugin
+NFSU2Online.log
+NFSU2FreeRoam.log

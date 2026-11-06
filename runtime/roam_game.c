@@ -2845,9 +2845,15 @@ uint32_t coop_player(void);                  /* coop.c: player 2's Player (0 non
 static void tags_update_seat(CPU *c);
 /* the names for player 1's view (seat 0) or co-op player 2's (seat 1: its HUD, its view, the screen's lower half) */
 static void tags_update_for(CPU *c, int seat){
-    g_tag_seat = seat; g_tagp = &g_tags[seat]; g_flp = &g_fls[seat];
+    g_tag_seat = seat; g_tagp = &g_tags[seat];
+#if FLAGS
+    g_flp = &g_fls[seat];
+#endif
     tags_update_seat(c);
-    g_tag_seat = 0; g_tagp = &g_tags[0]; g_flp = &g_fls[0];
+    g_tag_seat = 0; g_tagp = &g_tags[0];
+#if FLAGS
+    g_flp = &g_fls[0];
+#endif
 }
 static void tags_update(CPU *c){ tags_update_for(c, 0); }
 static void tags_update_seat(CPU *c){
@@ -8582,7 +8588,11 @@ static void cost_add(uint64_t t0){
     g_cost_sum += ns; g_cost_n++; if (ns > g_cost_max) g_cost_max = ns;
     g_cost_win_sum += ns; g_cost_win_n++; if (ns > g_cost_win_max) g_cost_win_max = ns;
 }
+#ifdef ROAM_HOST_WIN
+static uint32_t g_cp_n_get(void){ return 0; }   /* no co-op in the Windows plugin (its own is in the port-only tail) */
+#else
 static uint32_t g_cp_n_get(void);
+#endif
 static struct { uint64_t frames, calls, us; } g_lsv;   /* load_service: frames it ran in, its calls, its time */
 static void periodic_log(int64_t host){
     if (!g_cost_win_t0) g_cost_win_t0 = host;

@@ -16,6 +16,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
+/* the game's own addresses of the players' arrays (the native exe: not relocated, as in the browser build) */
+#include "splitscreen_mem.h"
 
 typedef struct CPU CPU;                  /* the port's guest CPU: not used here (always 0) */
 

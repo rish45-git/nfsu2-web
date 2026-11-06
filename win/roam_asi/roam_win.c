@@ -20,6 +20,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+/* windows.h still defines the 16-bit far and near as nothing: roam_core.h has fields of those names */
+#undef far
+#undef near
 #include "roam_plat.h"
 
 void roam_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

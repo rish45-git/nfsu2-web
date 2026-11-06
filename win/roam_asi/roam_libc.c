@@ -35,6 +35,9 @@ int memcmp(const void *a, const void *b, size_t n){
     return 0;
 }
 size_t strlen(const char *s){ size_t n = 0; while (s[n]) n++; return n; }
+/* newer GCCs (16) turn some snprintf/memcpy patterns of the core into these */
+char *strcpy(char *d, const char *s){ char *o = d; while ((*o++ = *s++)) ; return d; }
+char *strcat(char *d, const char *s){ strcpy(d + strlen(d), s); return d; }
 int strcmp(const char *a, const char *b){
     while (*a && *a == *b){ a++; b++; }
     return (uint8_t)*a - (uint8_t)*b;

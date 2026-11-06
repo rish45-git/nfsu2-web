@@ -32,6 +32,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+/* windows.h still defines the 16-bit far and near as nothing: roam_core.h has fields of those names */
+#undef far
+#undef near
 #include <stdarg.h>
 #include "roam_core.h"
 #include "roam_plat.h"
