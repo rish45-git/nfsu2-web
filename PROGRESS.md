@@ -328,6 +328,13 @@ passed a "Connecting to lobby..." the trip called off by itself. No FAULT or FAI
 vsock "unread for 20 s" warning counted from the last read, so the LAN server's 21 s keep-alives were reported as
 stalls (it now counts from the data's arrival).
 
+**The laptop hosting (2026-11-07 00:01–00:04):** a drift race (STAGE_1_DRIFT_1, mode 3) from the laptop's marker; the
+desktop joined from afar with J at 1496 m, joined the laptop's LAN server at 10.77.29.2, raced, won (margin 100
+points), the career took it ($450 → $850 with the top-up), back in free roam: a laptop host and a drift race both
+work. Still untested: the laptop winning (Partner on the desktop's side), drag and the other race types, quitting a race.
+The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then "out of range" about every 65 s) are
+the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
+
 **To do, seen in the second test:** opening the car's doors (the game's door/hatch animation, standing still in free
 roam) opens the doors of every player's car on that screen too, and the other player's screen shows none of it: the
 door state is the game's own for all cars of that model (both are COROLLAs) and is not sent. Fix: keep the doors to
