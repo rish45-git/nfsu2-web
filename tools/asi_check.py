@@ -37,7 +37,10 @@ ALLOWED = {
         'QueryPerformanceFrequency', 'Sleep', 'TryEnterCriticalSection', 'VirtualProtect', 'VirtualQuery',
         'WaitForSingleObject', 'WriteFile', 'lstrcmpA', 'lstrcmpiA', 'lstrcpyA', 'lstrlenA',
         # online play (win/online/switch.c)
-        'GetProcessHeap', 'HeapAlloc', 'HeapFree', 'HeapReAlloc'},
+        'GetProcessHeap', 'HeapAlloc', 'HeapFree', 'HeapReAlloc',
+        # the game's own Winsock on the virtual LAN (win/online/vsock.c, vsock_ws2.c; Vista and newer, online needs 8)
+        'CreateEventA', 'SetEvent', 'SetLastError', 'InitializeConditionVariable', 'SleepConditionVariableCS',
+        'WakeAllConditionVariable'},
     # online play: the WebSocket to the server's switch (Windows 8 or newer; only used with Server = in the .ini)
     'WINHTTP.dll': {
         'WinHttpCloseHandle', 'WinHttpConnect', 'WinHttpOpen', 'WinHttpOpenRequest', 'WinHttpQueryHeaders',

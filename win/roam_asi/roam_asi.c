@@ -39,6 +39,7 @@
 #include "roam_core.h"
 #include "roam_plat.h"
 #include "roam_fp.h"
+#include "vsock.h"                                 /* win/online: the game's own Winsock on the server's virtual LAN */
 
 int  vsnprintf(char *buf, size_t n, const char *fmt, va_list ap);
 int  snprintf(char *buf, size_t n, const char *fmt, ...);
@@ -117,6 +118,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_DUMPCAR",     "DumpCar",    ""  },  /* test aid: save the car's record as NFSU2FreeRoam.car (for roambot) */
     { "NFSU2_ROAM_SERVER",      "Server",     ""  },  /* ws://host:port/lan: play on a server's virtual LAN, not the local one */
     { "NFSU2_ROAM_CLAIM",       "Claim",      ""  },  /* the token of a claimed name (the server's page makes it) */
+    { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },
     { "NFSU2_ROAM_ROOM",        "Room",       ""  },
@@ -453,6 +455,52 @@ static int hook_install(void){
     return 1;
 }
 
+/* ---- the game's network on the server's virtual LAN (Server = in the .ini) ---------------------------- */
+/* SPEED2.EXE's imports of ws2_32 (by ordinal, WSAIoctl by name) and netapi32!Netbios now point at the plugin's
+ * virtual Winsock (win/online/vsock_ws2.c): its Online menu talks to the server's stand-in for EA at 10.77.0.1, its LAN
+ * screens to the other players on the switch, as in the browser.  Only the exe's import table changes, in memory (the
+ * plugin's own WinHTTP and Winsock imports are its own); the file is never touched. */
+int roam_win_online_init(void);                     /* roam_win.c */
+static int iat_patch(void){
+    uint8_t *base = (uint8_t *)(uintptr_t)EXE_BASE;
+    IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(base + ((IMAGE_DOS_HEADER *)base)->e_lfanew);
+    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress || !readable(EXE_BASE + dir.VirtualAddress, dir.Size)){ roam_log("[lan] the exe's import table is not readable\n"); return 0; }
+    int want = 0, n = 0;
+    for (const vs_import *v = vs_imports; v->dll; v++) want++;
+    for (IMAGE_IMPORT_DESCRIPTOR *id = (IMAGE_IMPORT_DESCRIPTOR *)(base + dir.VirtualAddress); id->Name; id++){
+        const char *dll = (const char *)(base + id->Name);
+        int ours = 0;
+        for (const vs_import *v = vs_imports; v->dll && !ours; v++) ours = !lstrcmpiA(v->dll, dll);
+        if (!ours) continue;
+        if (!id->OriginalFirstThunk){ roam_log("[lan] %s: no import names (a bound or packed exe?): not redirected\n", dll); continue; }
+        IMAGE_THUNK_DATA32 *ot = (IMAGE_THUNK_DATA32 *)(base + id->OriginalFirstThunk), *ft = (IMAGE_THUNK_DATA32 *)(base + id->FirstThunk);
+        for (; ot->u1.AddressOfData; ot++, ft++){
+            const vs_import *hit = 0;
+            for (const vs_import *v = vs_imports; v->dll && !hit; v++){
+                if (lstrcmpiA(v->dll, dll)) continue;
+                if (IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal)){ if (v->ord && (int)IMAGE_ORDINAL32(ot->u1.Ordinal) == v->ord) hit = v; }
+                else if (!lstrcmpA((const char *)((IMAGE_IMPORT_BY_NAME *)(base + ot->u1.AddressOfData))->Name, v->name)) hit = v;
+            }
+            if (!hit){ roam_log("[lan]   %s import %s%u not redirected (the plugin has no stand-in)\n", dll,
+                                IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal) ? "#" : "rva ", (unsigned)(ot->u1.Ordinal & 0xFFFFu)); continue; }
+            DWORD old;
+            if (!VirtualProtect(&ft->u1.Function, 4, PAGE_READWRITE, &old)){ roam_log("[lan] VirtualProtect failed (%lu)\n", GetLastError()); return n; }
+            ft->u1.Function = (DWORD)(uintptr_t)hit->fn;
+            VirtualProtect(&ft->u1.Function, 4, old, &old);
+            n++;
+        }
+    }
+    roam_log("[lan] the game's network goes to the server's virtual LAN: %d imports of SPEED2.EXE redirected "
+             "(the plugin has %d stand-ins)\n", n, want);
+    return n;
+}
+static void online_setup(void){
+    if (!roam_win_online_init()) return;
+    if (!vs_patch_lobby_host()) roam_log("[lan] the Online menu will not reach the server (see above); LAN play still goes to the virtual LAN\n");
+    iat_patch();
+}
+
 /* ---- start-up ---------------------------------------------------------------------------------------- */
 static void init_once(void){
     if (g_inited) return;
@@ -476,6 +524,7 @@ static void init_once(void){
     g_test_fault = opt_int("NFSU2_ROAM_TEST_FAULT", 0);
     g_test_fault_seh = opt_int("NFSU2_ROAM_TEST_FAULT_SEH", 0);
     if (!AddVectoredExceptionHandler(1, roam_veh)) roam_log("[roam] no fault guard (AddVectoredExceptionHandler failed)\n");
+    online_setup();                                 /* before the game's first Winsock call (its LAN or Online menu) */
     if (!hook_install()) return;
     g_ready = 1;
     roam_log("[roam] ready: the network starts with the game's first frame\n");

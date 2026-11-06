@@ -32,6 +32,7 @@ struct sw {
     char token[64];                         /* from the welcome: resume with it after a lost link */
     uint32_t last_vip;
     char ticket[96];                        /* the place in line, kept for a reconnect */
+    volatile LONG lan_on, lan_udp;          /* LAN play open, its UDP ports (sw_set_lan): said in every hello */
 
     LONG ping_id;
     struct { uint32_t id; LONGLONG t; } pings[8];
@@ -156,6 +157,16 @@ int sw_send_udp(sw *s, uint8_t kind, uint32_t dst, uint16_t sport, uint16_t dpor
     for (int i = 0; i < len; i++) f[16 + i] = data[i];
     return sw_send_frame(s, f, 16 + len);
 }
+int sw_set_lan(sw *s, int on, uint32_t udp){
+    on = on != 0; if (!on) udp = 0;
+    if (s->lan_on == on && (uint32_t)s->lan_udp == udp) return 1;
+    InterlockedExchange(&s->lan_on, on); InterlockedExchange(&s->lan_udp, (LONG)udp);
+    if (s->state != SW_ONLINE) return 0;                  /* the next hello says it */
+    char m[64]; int k = sappend(m, sizeof m, 0, "{\"t\":\"lan\",\"on\":"); k = sappend(m, sizeof m, k, on ? "1" : "0");
+    if (on && (udp & 0x80000000u)){ k = sappend(m, sizeof m, k, ",\"udp\":"); k = uappend(m, sizeof m, k, udp); }
+    sappend(m, sizeof m, k, "}");
+    return sw_send_text(s, m);
+}
 int sw_ping(sw *s){
     if (s->state != SW_ONLINE) return 0;
     LONG id = InterlockedIncrement(&s->ping_id);
@@ -235,7 +246,8 @@ static int run_once(sw *s, int resume){
     /* the hello (switch.h: no bundle/compact/delta) */
     {
         char h[600]; int n = sappend(h, sizeof h, 0, "{\"t\":\"hello\",\"name\":\"");
-        n = jesc(h, sizeof h, n, s->name); n = sappend(h, sizeof h, n, "\",\"lan\":"); n = sappend(h, sizeof h, n, s->o.lan ? "1" : "0");
+        n = jesc(h, sizeof h, n, s->name); n = sappend(h, sizeof h, n, "\",\"lan\":"); n = sappend(h, sizeof h, n, s->lan_on ? "1" : "0");
+        if (s->lan_on && ((uint32_t)s->lan_udp & 0x80000000u)){ n = sappend(h, sizeof h, n, ",\"udp\":"); n = uappend(h, sizeof h, n, (uint32_t)s->lan_udp); }
         if (s->claim[0]){ n = sappend(h, sizeof h, n, ",\"claim\":\""); n = jesc(h, sizeof h, n, s->claim); n = sappend(h, sizeof h, n, "\""); }
         if (resume && s->last_vip && s->token[0]){
             char ip[20]; ipstr(ip, s->last_vip);
@@ -292,7 +304,9 @@ static DWORD WINAPI reader_main(LPVOID p){
         int resume = (s->last_vip && s->token[0]) || s->ticket[0];
         set_state(s, SW_CONNECTING);
         int code = run_once(s, resume);
+        int was_online = s->vip != 0;
         InterlockedExchange(&s->vip, 0);
+        if (was_online && s->cb.on_down) s->cb.on_down(s->cb.user);
         if (s->stop) break;
         if (s->state == SW_REMOVED || code == CLOSE_KICKED || code == CLOSE_BANNED || code == CLOSE_RENAME){
             if (s->state != SW_REMOVED && s->cb.on_removed) s->cb.on_removed(s->cb.user, code == CLOSE_BANNED, "");
@@ -327,6 +341,7 @@ sw *sw_start(const sw_options *o, const sw_callbacks *cb){
     scopy(s->url, sizeof s->url, o->url); s->o.url = s->url;
     scopy(s->name, sizeof s->name, o->name ? o->name : "player");
     scopy(s->claim, sizeof s->claim, o->claim);
+    s->lan_on = o->lan != 0;
     LARGE_INTEGER f; QueryPerformanceFrequency(&f); s->qpf = f.QuadPart ? f.QuadPart : 1;
     InitializeCriticalSection(&s->lock);
     if (!parse_url(s)){ log_(s, "the URL must be ws://host[:port]/lan or wss://host/lan"); DeleteCriticalSection(&s->lock); HeapFree(GetProcessHeap(), 0, s); return 0; }

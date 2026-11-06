@@ -36,13 +36,14 @@ typedef struct {
     void (*on_text)(void *u, const char *json, int len);                      /* every text message, before the above */
     void (*on_log)(void *u, const char *line);
     void *user;
+    void (*on_down)(void *u);                                                 /* a welcomed connection is gone */
 } sw_callbacks;
 
 typedef struct {
     const char *url;        /* ws://host:port/lan or wss://host/lan (the client adds ?queue, and ?resume to a retry) */
     const char *name;       /* the player's name (the server cleans it: at most 32 printable characters) */
     const char *claim;      /* a claimed name's keyphrase token, or 0 */
-    int lan;                /* 1: LAN play is open: the peer list with the server's hosts, LAN broadcasts */
+    int lan;                /* 1: LAN play is open from the start (sw_set_lan changes it): every peer, LAN broadcasts */
     int ping_ms;            /* 0: 10000 */
 } sw_options;
 
@@ -57,5 +58,9 @@ int sw_send_frame(sw *s, const uint8_t *frame, int len);
 int sw_send_udp(sw *s, uint8_t kind, uint32_t dst, uint16_t sport, uint16_t dport, const uint8_t *data, int len);
 int sw_send_text(sw *s, const char *json);
 int sw_ping(sw *s);                                          /* a ping: on_pong follows */
+/* LAN play open or shut, and the UDP ports its sockets are bound to (0x80000000 | bit port % 31 each; 0: not said):
+ * {"t":"lan"} now if online (1 sent), and in every later hello.  The switch sends LAN broadcasts only to clients with
+ * LAN play open (and a socket on the port), and the whole peer list with its changes only to them. */
+int sw_set_lan(sw *s, int on, uint32_t udp);
 
 #endif

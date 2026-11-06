@@ -49,7 +49,7 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | 0 | branch, .gitignore, test copy, toolchain, the existing free-roam ASI built and tried, local server | **done** |
 | 1 | switch client in C (WebSocket, hello/welcome, ping, queue, kick), a console probe against the local server | **done** (see below) |
 | 2 | free roam online: a switch transport for the ASI, the hub | **done** against simulated players (see below); not yet with a browser player; the exe-fingerprint generator is still unfixed |
-| 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | the bulk |
+| 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat, quitting and races with a second player not yet confirmed |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
 
@@ -111,7 +111,7 @@ stance): drive stock cars online, or disable them in the test copy.
 
 ## Next
 
-1. **Phase 3**, the game's own Online lobby (not started; wait for the go-ahead): redirect the exe's 22 ws2_32
+1. **Phase 3**, the game's own Online lobby (works in the game; open: chat, quitting, then a second player: phase 4): redirect the exe's 22 ws2_32
    imports (by ordinal) and `Netbios` through the switch client; `gethostbyname("pcnfs05.ea.com")` -> 10.77.0.1;
    the `*pcnfs05.ea.com` string at 0x7FBDBC -> `pcnfs05.ea.com`; TCP as the switch's stream frames (kind 4), UDP as
    kind 3, ICMP echo as kind 5. `runtime/winsock.c` and `runtime/web/net_lan.c` describe the behaviour exactly.
@@ -132,6 +132,78 @@ stance): drive stock cars online, or disable them in the test copy.
 - `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
   p50 latency 27 ms, hub and switch work. The server log shows each join/leave as `[lan] 10.77.x.2 joined`.
 - Startup notes: Online (10.77.0.1) and the free-roam hub (10.77.0.253) are on; `game.wasm` is missing (not needed).
+
+## Phase 3: virtual Winsock for the Online lobby (plan, 2026-11-06)
+
+Verified first: SPEED2.EXE's IAT has ws2_32 at 0x7833C4..0x783418 (21 by ordinal + `WSAIoctl` by name), netapi32
+`Netbios` at 0x7832CC; `*pcnfs05.ea.com` at 0x7FBDBC is in `.data` (writable). `server.dll` (EA's LAN server) imports
+the same set plus getsockopt/htons/htonl/ntohs/ntohl: it is not hooked by patching the exe's IAT.
+
+**Design.** A port of the browser's path, not a proxy: the game gets virtual sockets that live in the plugin.
+- `win/online/vsock.c` (+ `vsock.h`): the virtual IP stack, ported from `runtime/web/net_lan.c` rule for rule (bind
+  semantics, ephemeral ports 49152-65534, UDP unicast/broadcast/port-unreachable, the kind-4 stream protocol with
+  SYN/SYNACK/DATA/FIN/RST and the connector's id, 3 s connect timeout, ICMP echo answered here, loopback and own-vip
+  traffic kept local, the auto-answer rate limits). One SRW lock + one condition variable (every change wakes all
+  waiters) instead of the wasm event word. The TX ring stays (in process memory, a writer thread sends to the switch
+  outside the lock), so `tx_free`/`TX_RESERVE`/the control-frame queue behave exactly as in the browser.
+  Transport-agnostic: frames out through a callback, frames in through `vs_rx_frame`, link state through `vs_link`.
+- `win/online/vsock_ws2.c`: the stdcall Winsock surface over it, from `runtime/winsock.c`'s vlan paths: the 22
+  functions, `Netbios` (NCBRESET/NCBASTAT/NCBENUM, MAC 02:4E:56:4C:x:y from the vip), `gethostbyname`
+  (`pcnfs05.ea.com` -> 10.77.0.1, own name, dotted quads; everything else WSAHOST_NOT_FOUND), `gethostname`
+  ("VLAN-<host number>"), `select` (sets read before written), non-blocking connect reported through select/SO_ERROR
+  (never synchronously), `SIO_ROUTING_INTERFACE_QUERY` -> the vip, errors through SetLastError (WSAGetLastError is
+  GetLastError on Windows too).
+- `win/online/switch.c`: `sw_set_lan(on, udp ports)` sends {"t":"lan"} and puts the state into every later hello.
+- Plugin (`roam_win.c`, `roam_asi.c`): with `Server =` set (and new `Online = 1`, the default), patch the exe's IAT
+  entries and the SSL byte at load; the switch connection is shared with free roam and starts on the game's first
+  WSAStartup if free roam has not started it; frames of kinds 3-5 go to vsock; "gone" in a peer delta resets that
+  player's TCP connections (the page's NET_LAN_TCP_GONE); a reconnect resets every remote connection.
+- Not in the browser and not needed natively: NetTick (real GetTickCount here), the macOS Local Network checks,
+  `online.c`/`olfilter.c` (the page's persona display and Filter marking).
+
+**Steps** (each built and checked before the next):
+1. `switch.c`: `sw_set_lan` + the hello's `lan`/`udp`; probe still passes.
+2. `vsock.c`: the stack, compiled freestanding.
+3. `vsock_ws2.c`: the Winsock surface.
+4. `vsprobe.exe` against the local server, through the replacement functions themselves: WSAStartup, DNS,
+   non-blocking connect to 10.77.0.1:20920 + select, `@dir` -> ADDR/PORT and FIN, the lobby's 20922 accepts,
+   ICMP echo, UDP port unreachable -> WSAECONNRESET on a connected socket, an in-process listen/accept, close semantics.
+5. Plugin: IAT patch, SSL byte, the glue; `tools/asi_check.py` PASS.
+6. In the game (test copy): Online -> login -> the lobby; the plugin's log and the server's.
+7. Then (or phase 4): hook `server.dll` too when the game loads it (LoadLibraryA), so LAN hosting works on the
+   virtual LAN instead of breaking while the hooks are on.
+
+### Phase 3 so far (2026-11-06)
+
+- Steps 1-5 done. `out/win/vsprobe.exe [url] [name]` (`win/online/build_probe.sh`): **all 33 checks pass** against the
+  local server, through the replacement functions themselves: WSAStartup brings the link up (13 ms), names, Netbios'
+  adapter, a non-blocking connect to 10.77.0.1:20920 reported writable by select, the `@dir` answer
+  (ADDR=10.77.0.1 PORT=20922) then the redirector's FIN (recv 0), a refused connect in exceptfds with SO_ERROR 10061,
+  a blocking connect to the lobby, getsockname/SIO_ROUTING_INTERFACE_QUERY = the vip, UDP port unreachable ->
+  WSAECONNRESET, ICMP echo with the IP header, in-process listen/accept/stream/FIN, WSAEADDRINUSE, the own broadcast
+  looped back, WSAEACCES without SO_BROADCAST, closesocket waking a blocked recv on another thread (WSAEINTR).
+- The plugin (`NFSU2FreeRoam.asi`, 326,656 bytes, `asi_check.py` PASS) in the test copy: at load "the lobby link is
+  plain TCP ... 23 imports of SPEED2.EXE redirected" (21 ws2_32 by ordinal + WSAIoctl + Netbios). `Online = 1` is in
+  the .ini (repo and test copy); the phase-2 plugin and log are kept in `out/win/backup/`.
+- Glue: the switch connection is shared; it starts on the game's first WSAStartup if free roam has not started it
+  (name: the profile's, else `Name =`, else "Player"); the LAN state ({"t":"lan","on","udp"}) is remembered for a
+  switch not started yet and goes into every hello (`sw_set_lan`); `switch.c` got `on_down`; a delta's "gone" resets
+  that player's connections; free roam's stop keeps the switch while a network session is open.
+- **Launching the game from the agent's background shell crashes it at start** (0xC0000005 at 0x5D2780: a call
+  through the D3D9 device at [0x870974], which is null: device creation failed), *with `Online = 0` too*, so not
+  phase 3; the computer-use tool cannot select the game's window either (no title, not a Start-menu app). The in-game
+  test needs the player to start the game normally. PowerShell 5.1 `Set-Content -Encoding utf8` writes a BOM: edit
+  the .ini with Python or an editor.
+- **In the game (2026-11-06 12:45, the player started the test copy normally, all the player's mods):** logged in under
+  any name, the Online Main Menu, the Game Session Lobby ("Players Online: 1"), and a created game room (Freemont, 1 lap)
+  with the player in it, three green connection dots and three open slots; Start Race needs a second player. The
+  plugin's log: the game's WSAStartup(2.0) took the switch free roam had already opened (10.77.29.2), then TCP to
+  10.77.0.1:20920 (redirector), :20922 (lobby), :13505 (EA Messenger); ICMP 11 out, 11 answered (the dots); in 7 minutes
+  0 resets, 0 refused, TX ring never full, nothing dropped; the server counted `"online":1`. Free roam's hub kept
+  answering alongside. Not confirmed yet: lobby chat, quitting the game with the Online session open (the exit path
+  skips every WinHTTP call), a second player joining the room.
+- Not built yet: `server.dll` hooks (step 7), the peer bitmap (a connect to an absent vip times out in 3 s with
+  WSAETIMEDOUT instead of WSAEHOSTUNREACH), the browser's race statistics and Filter marking.
 
 ## Phase 2: free roam online (done 2026-11-06, with simulated players)
 

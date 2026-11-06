@@ -25,6 +25,7 @@
 #undef near
 #include "roam_plat.h"
 #include "switch.h"                       /* win/online: the client of the server's virtual LAN switch */
+#include "vsock.h"                        /* win/online: the game's own Winsock on that switch (the Online menu) */
 
 void roam_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 const char *roam_opt(const char *name);
@@ -57,6 +58,10 @@ static int              g_online;
 static volatile LONG    g_vip, g_mask;     /* our virtual address and netmask, from the welcome */
 static int64_t          g_sw_start_at;     /* the switch starts when the player's name is known (or after 45 s) */
 static char             g_server[200];
+static volatile LONG    g_sw_busy;         /* online_start_switch running (free roam's thread or a game thread) */
+/* the game's Online menu (and LAN screens) on the switch: win/online/vsock.c (vs_transport below) */
+static int              g_vs_on;
+static volatile LONG    g_lan_on, g_lan_udp;   /* LAN play open, its UDP ports, as vsock last said: for a switch not started yet */
 
 static void mu_init(void){
     if (InterlockedCompareExchange(&g_mu_init, 1, 0) == 0){ InitializeCriticalSection(&g_mu); g_mu_init = 2; }
@@ -242,9 +247,29 @@ static void sw_welcome(void *u, uint32_t vip, uint32_t mask, const char *token){
     char b[16];
     InterlockedExchange(&g_mask, (LONG)mask); InterlockedExchange(&g_vip, (LONG)vip);
     roam_log("[roam] on the server's virtual LAN as %s\n", roam_ip_str(vip, b));
+    if (g_vs_on) vs_link_up(vip, mask);
+}
+static void sw_down(void *u){ (void)u; if (g_vs_on) vs_link_down(); }
+/* a peer delta's "gone": those players' TCP connections to us are reset (the page's NET_LAN_TCP_GONE) */
+static void sw_peers(void *u, const char *j, int n){
+    (void)u;
+    if (!g_vs_on) return;
+    for (int i = 0; i + 8 < n; i++){
+        if (j[i] != '"' || j[i + 1] != 'g' || j[i + 2] != 'o' || j[i + 3] != 'n' || j[i + 4] != 'e' || j[i + 5] != '"') continue;
+        int p = i + 6; while (p < n && (j[p] == ':' || j[p] == ' ')) p++;
+        if (p >= n || j[p] != '[') return;
+        for (p++; p < n && j[p] != ']'; ){
+            uint32_t v = 0; int nd = 0;
+            while (p < n && j[p] >= '0' && j[p] <= '9'){ v = v * 10u + (uint32_t)(j[p++] - '0'); nd++; }
+            if (nd) vs_peer_gone(v);
+            while (p < n && j[p] != ']' && (j[p] < '0' || j[p] > '9')) p++;
+        }
+        return;
+    }
 }
 static void sw_frame(void *u, const uint8_t *f, int len){
     (void)u;
+    if (len >= 16 && f[0] >= SW_KIND_LAN_UDP && f[0] <= SW_KIND_LAN_ICMP){ if (g_vs_on) vs_rx_frame(f, len); return; }
     uint32_t mx = roam_win_mxcsr_default();            /* the core's floats, on this thread too */
     __asm__ volatile ("ldmxcsr %0" :: "m"(mx));
     if (len < 16 || f[0] != SW_KIND_UDP || !g_s) return;
@@ -267,19 +292,54 @@ static void sw_removed(void *u, int ban, const char *msg){
              *msg ? " (\"" : "", msg, *msg ? "\")" : "");
 }
 static void sw_queue(void *u, int pos, int of){ (void)u; roam_log("[roam] the server is full: in line, %d of %d\n", pos, of); }
-static void online_start_switch(void){
-    if (g_sw) return;
+/* free roam (its thread) or the game's Winsock (a WSAStartup, force: now, whatever the name) */
+static void online_start_switch_(int force){
     char name[40]; int i = 0;
-    roam_plat_lock(); for (; g_s->conf.name[i] && i < 39; i++) name[i] = g_s->conf.name[i]; name[i] = 0; roam_plat_unlock();
+    if (g_s){ roam_plat_lock(); for (; g_s->conf.name[i] && i < 39; i++) name[i] = g_s->conf.name[i]; name[i] = 0; roam_plat_unlock(); }
+    else { const char *n = roam_opt("NFSU2_ROAM_NAME"); for (; n && n[i] && i < 24; i++) name[i] = n[i]; name[i] = 0; if (!i) lstrcpyA(name, "Player"); }
     int named = lstrcmpA(name, "Player") != 0;
     int64_t now = roam_plat_now_us();
     if (!g_sw_start_at) g_sw_start_at = now + 45000000;
-    if (!named && now < g_sw_start_at) return;             /* the profile's name comes with the first frames */
-    sw_options o = { g_server, name, roam_opt("NFSU2_ROAM_CLAIM"), 0, 10000 };
-    sw_callbacks cb = { sw_welcome, sw_frame, 0, sw_queue, sw_removed, 0, 0, sw_log, 0 };
-    g_sw = sw_start(&o, &cb);
-    roam_log("[roam] joining the server's switch %s as \"%s\"%s\n", g_server, name, g_sw ? "" : " FAILED (bad URL?)");
-    if (!g_sw) g_online = 0;
+    if (!force && !named && now < g_sw_start_at) return;   /* the profile's name comes with the first frames */
+    sw_options o = { g_server, name, roam_opt("NFSU2_ROAM_CLAIM"), (int)g_lan_on, 10000 };
+    sw_callbacks cb = { sw_welcome, sw_frame, sw_peers, sw_queue, sw_removed, 0, 0, sw_log, 0, sw_down };
+    sw *n = sw_start(&o, &cb);
+    if (n && g_lan_on) sw_set_lan(n, 1, (uint32_t)g_lan_udp);   /* its UDP ports in the first hello too */
+    g_sw = n;
+    roam_log("[roam] joining the server's switch %s as \"%s\"%s%s\n", g_server, name, force ? " (for the game's network)" : "",
+             g_sw ? "" : " FAILED (bad URL?)");
+    if (!g_sw){ g_online = 0; g_vs_on = 0; }
+}
+static void online_start_switch_f(int force){
+    if (g_sw || !g_server[0]) return;
+    if (InterlockedCompareExchange(&g_sw_busy, 1, 0) != 0) return;   /* the other thread is at it */
+    if (!g_sw) online_start_switch_(force);
+    InterlockedExchange(&g_sw_busy, 0);
+}
+static void online_start_switch(void){ online_start_switch_f(0); }
+
+/* ---- the game's Winsock on the switch (vsock.h): its transport ------------------------------------- */
+static int vt_send(void *u, const uint8_t *f, int len){ (void)u; sw *w = g_sw; return w && sw_send_frame(w, f, len); }
+static void vt_lan(void *u, int on, uint32_t udp){
+    (void)u;
+    InterlockedExchange(&g_lan_on, on); InterlockedExchange(&g_lan_udp, (LONG)udp);
+    sw *w = g_sw; if (w) sw_set_lan(w, on, udp);
+}
+static void vt_want(void *u){ (void)u; online_start_switch_f(1); }
+static void vt_log(void *u, const char *line){ (void)u; roam_log("[lan] %s\n", line); }
+static const vs_transport g_vt = { vt_send, vt_lan, vt_want, vt_log, 0 };
+/* at load (roam_asi.c): with Server = (and Online = 1, the default), the game's own network goes to the server's
+ * virtual LAN; 1 = the caller patches the game's Winsock imports */
+int roam_win_online_init(void){
+    const char *srv = roam_opt("NFSU2_ROAM_SERVER"), *on = roam_opt("NFSU2_ROAM_ONLINE");
+    if (!srv || !*srv) return 0;
+    if (on && on[0] == '0' && !on[1]){ roam_log("[lan] Online = 0: the game's own network (LAN and Online menus) stays the real one\n"); return 0; }
+    if (roam_plat_test_mode()){ roam_log("[lan] test harness: the game's own network is not redirected\n"); return 0; }
+    int i = 0; for (; srv[i] && i < (int)sizeof g_server - 1; i++) g_server[i] = srv[i];
+    g_server[i] = 0;
+    if (vs_init(&g_vt) != 0) return 0;
+    g_vs_on = 1;
+    return 1;
 }
 
 int roam_plat_start(const roam_plat_cfg *cfg, rc_session *s){
@@ -350,14 +410,14 @@ void roam_plat_stop(uint8_t reason){
         extern volatile int roam_win_exiting;
         if (roam_win_exiting){                    /* process exit: every thread of ours and WinHTTP's is gone; the server
                                                    * drops this player after a few seconds without us */
-            g_stop = 1; g_sw = 0; g_online = 0;
+            g_stop = 1; g_sw = 0; g_online = 0; g_vs_on = 0;
             return;
         }
         mu_init();
         if (TryEnterCriticalSection(&g_mu)){ rc_shutdown(g_s, reason); LeaveCriticalSection(&g_mu); }   /* BYE to the hub and peers */
         g_stop = 1;
         if (g_thr){ WaitForSingleObject(g_thr, 200); CloseHandle(g_thr); g_thr = 0; }
-        if (g_sw){ sw_stop(g_sw); g_sw = 0; }
+        if (g_sw && !(g_vs_on && vs_session_active())){ sw_stop(g_sw); g_sw = 0; }   /* the game's network may still need it */
         g_online = 0;
         return;
     }
