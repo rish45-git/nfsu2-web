@@ -270,6 +270,36 @@ shared code still takes more, we just do not build or test for it.)
   asi_check PASS. The shared files (mprace.c, roam_game.c) also compile on the port's path (`-fsyntax-only` with a
   stand-in for the Mac's mach_time.h): no errors; the browser build itself was not run.
 
+**Installed (2026-11-06 17:44):** the step-5 plugin (502,272 bytes, the same bytes as `out/win/NFSU2FreeRoam.asi`) in
+`C:\Games\NFSU2-online\scripts`; the phase-4 plugin and .ini kept as `out/win/backup/NFSU2FreeRoam.phase4.*`. The test
+copy's .ini got `Servers = local=ws://127.0.0.1:8691/lan, lan=ws://192.168.0.109:8691/lan`, `ServerKey = F8`,
+`Labels = 1`, `JoinKey = J`, `FarJoin = 1`, `Partner = rishilaptop` (Room stays empty: the laptop's .ini has none
+either). **The laptop still has the phase-4 plugin:** copy `out/win/dist/scripts/NFSU2FreeRoam.asi` over its
+`scripts\NFSU2FreeRoam.asi` and add `Partner = Rishi` (the desktop's Name) and `JoinKey = J` to its .ini.
+
+**To try in the game, in this order** (the player; the log lines to look for in `scripts\NFSU2FreeRoam.log`):
+1. Start: `HUD hook: 0x006005e0 now jumps to the plugin`, `the exe's LoadLibraryA goes through the plugin`,
+   `server switch: F8 goes to the next of the 2 server(s)`, then in free roam `[keys] the game's keyboard (...) hooked`.
+   With the laptop in free roam: its name over its car (new natively), no FAULT line.
+2. F8 in free roam: the top line "Server: lan (...): connecting", then "connected as 10.77.x.y"; the laptop's car goes
+   and comes back. F8 in the Online menu: refused (the HUD is not up there, so the log says it, not the top line).
+3. LAN menu by hand: Host LAN Server on the desktop (`[lan] server.dll (loaded at ...): the LAN server is on the
+   virtual LAN`), the laptop's LAN menu finds it, joins, a race. (If this fails, the trips cannot work.)
+4. A career race marker on the desktop: its card's Accept asks Solo or Multiplayer, with LEFT/RIGHT in its text (check
+   which label words the two buttons show); Multiplayer: the top line "Multiplayer sprint: waiting for players".
+   The laptop: drives there and presses Enter, or anywhere presses J on the offer ("Rishi hosts a multiplayer ...:
+   press J to join from here"). The desktop: Enter starts it. Both games drive themselves to the LAN race (the
+   player's keys are muted meanwhile: `[keys] the player's keys go to the race trip now`), race, results, back to the
+   crib and free roam at the marker; `[mprace] ...` lines all the way, the prize in the bank.
+5. Partner: both careers at the same stage, a race open in both; the laptop wins: the desktop's log
+   `our friend won it: it counts` and `[mpcredit] ... won 1`; the race's marker gone from the desktop's map.
+
+Known gaps (natively): no sponsor offers or race movie after a multiplayer win (the game offers sponsors after the
+next race); no quit datagrams (a player who quits a race pays the fee, the others are not told: the game's own
+network shows them leaving); the lobby's top line only shows while the HUD is up; English texts only; no controller
+keys for the lobby; the trip has never run natively, so expect the first tries to stop somewhere: the `[mprace]`
+lines say where.
+
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
    local entries (the same server under 127.0.0.1 and 192.168.0.109, so the swap is real), free roam's friend car gone
