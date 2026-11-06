@@ -283,3 +283,10 @@ void mpcredit_frame(struct CPU *c){
     roam_log("[mpcredit] f=%ld the waiting win of %s, in the crib\n", f, race_name(r));
     win_now(r, m);
 }
+
+/* ---- what roam_game.c's race lobbies take from the port ---- */
+#undef floorf
+float floorf(float x){ return mp_floorf(x); }
+const char *language_name(void){ return "english"; }      /* (the port's language.c reads the game's; the plugin's texts are English) */
+void pad_lobby_offer(int left, int right){ (void)left; (void)right; }   /* (the port's controller keys for the lobby card: none here) */
+int  pad_lobby_take(void){ return 0; }

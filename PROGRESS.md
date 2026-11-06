@@ -250,6 +250,19 @@ shared code still takes more, we just do not build or test for it.)
   plugin is 414,720 bytes: `asi_check.py`'s limit is now 512 KB (was 384). `out/win/mathtest.exe`: the plugin's
   logf/expf/powf/floorf against the C library's, 24,343 values, all exact (0 ulps). Nothing starts a trip yet (the
   lobby is step 4).
+- Step 4 (commit "Phase 6 step 4"): `MPRACES` is 1 in the plugin too (the HELLO says RC_HF_LOBBY). Native pieces in
+  roam_game.c (`#ifdef ROAM_HOST_WIN`): the race card's handler is `mp_card_msg` (shared; natively EngageRaceDialog's
+  vtable 0x78F990 entry 0 goes through `mp_card_win`); no texts of our own in the game's language table, so the
+  dialog's buttons are the game's own two labels of its yes/no questions (0xF770 left, 0x61C right, read from its 11
+  calls of 0x558750) and the question names them by place ("LEFT button: ... RIGHT button: ..."); English texts only
+  (`language_name` "english", `language_game_letters` ASCII); `mp_test_env` off. The two-player flow: the top line
+  offers a lobby heard of elsewhere ("NAME hosts a multiplayer sprint (1 of 6), 1234 m away: press J to join from
+  here"), `JoinKey = J` joins it from afar (`mp_far_join`) and leaves it again; `FarJoin = 1` (default) lets the host
+  take a JOIN from afar from anyone in its room (not only friends) and keep that player wherever it drives
+  (`far_mask`); the stage limit and "Friends & crew only" stay. roam_win.c: `roam_plat_lobby` 0 (no panel: the top
+  line), notices on the top line, the lobby actions' queue. The plugin: 502,272 bytes, asi_check PASS; swaptest still
+  17/17. **Not tried in the game: none of the lobby, the card's question, the trip.** The exe fingerprint does not
+  cover the lobby's game functions (roam_fingerprint.py is still broken, see above).
 
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two

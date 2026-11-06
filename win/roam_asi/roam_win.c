@@ -588,3 +588,26 @@ void roam_win_server_frame(void){
     if (vip){ snprintf(t, sizeof t, "Server: %s: connected as %s", g_swap_name, roam_ip_str(vip, b)); roam_game_note(t, 6000); g_swap_at = 0; }
     else if (now - g_swap_at > 15000000){ snprintf(t, sizeof t, "Server: %s: no answer yet (still trying; the key again for the next)", g_swap_name); roam_game_note(t, 8000); g_swap_at = 0; }
 }
+
+/* ---- race lobbies (runtime/roam_game.c mp_*): no page here ------------------------------------------------------
+ * roam_plat_lobby 0: the lobby is on free roam's top line (mp_line); a notice for the page goes there too; the lobby
+ * actions are the plugin's hotkeys' (roam_game_join_key), one queue (the game's thread only) */
+int roam_plat_lobby(const char *json){ (void)json; return 0; }
+void roam_plat_notice(const char *name, const char *what){
+    char t[200];
+    if (name && *name) snprintf(t, sizeof t, "%s: %s", name, what ? what : ""); else snprintf(t, sizeof t, "%s", what ? what : "");
+    roam_game_note(t, 6000);
+}
+static struct { int act; uint32_t a, b, r; } g_lbq[8];
+static int g_lbn;
+void roam_win_lobby_push(int act, uint32_t a, uint32_t b, uint32_t r){
+    if (g_lbn >= 8) return;
+    g_lbq[g_lbn].act = act; g_lbq[g_lbn].a = a; g_lbq[g_lbn].b = b; g_lbq[g_lbn].r = r; g_lbn++;
+}
+int roam_plat_lobby_act(uint32_t *host, uint32_t *lobby, uint32_t *race){
+    if (!g_lbn) return ROAM_LB_NONE;
+    int act = g_lbq[0].act; *host = g_lbq[0].a; *lobby = g_lbq[0].b; *race = g_lbq[0].r;
+    for (int i = 1; i < g_lbn; i++) g_lbq[i - 1] = g_lbq[i];
+    g_lbn--;
+    return act;
+}

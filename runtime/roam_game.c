@@ -114,12 +114,9 @@ static inline uint32_t coop_player(void){ return 0; }
 #endif
 
 /* ---- game addresses (v1.2 NA) ------------------------------------------------ */
-/* multiplayer races from free roam (mp_*, mprace.c): not in the Windows plugin */
-#ifdef ROAM_HOST_WIN
-#define MPRACES         0
-#else
+/* multiplayer races from free roam (mp_*, mprace.c): in the Windows plugin too (its two-player use: the lobby on the
+ * top line, the game's own dialogs, J to join from afar; no page) */
 #define MPRACES         1
-#endif
 /* flags before the names over friends' cars (flag_*): not in the Windows plugin */
 #ifdef ROAM_HOST_WIN
 #define FLAGS           0
@@ -5531,7 +5528,11 @@ static int race_why(uint32_t r, uint32_t stage){
 }
 /* a test switch (NFSU2_MPRACE_TEST_*): only in a scripted run (NFSU2_INPUT_SCRIPT, set by the test pages), never
  * from a player's settings.ini: it would make races count or strangers friends */
+#ifdef ROAM_HOST_WIN
+static const char *mp_test_env(const char *name){ (void)name; return 0; }      /* (no scripted runs in the plugin) */
+#else
 static const char *mp_test_env(const char *name){ const char *s = getenv("NFSU2_INPUT_SCRIPT"); return s && *s ? getenv(name) : 0; }
+#endif
 /* A win of race r in a multiplayer race counts in this career (mprace.c,
  * mpcredit.c: the game's own win) when the player could win it with Solo
  * here: a race open in the career now (its marker on the map, any stage), or
@@ -6158,6 +6159,18 @@ static int mp_join(int64_t host, MpLobby *l){
     mp_ask_in(); g_mp.tx_at = host;
     return 1;
 }
+#ifdef ROAM_HOST_WIN
+/* The plugin's FarJoin (default 1): a host takes a JOIN from afar from anyone in its room, not only from a friend or
+ * crew-mate (the plugin has no page for friends: with a private Room the room is the two players), and keeps that
+ * player wherever it drives (far_mask).  The joiner's own trip leaves from where it is and comes back there */
+static int mp_far_any(void){
+    static int v = -1;
+    if (v < 0){ const char *o = rh_opt("NFSU2_ROAM_FARJOIN"); v = !(o && o[0] == '0' && !o[1]); rlog("[roam] race lobbies: FarJoin %d\n", v); }
+    return v;
+}
+#else
+static int mp_far_any(void){ return 0; }
+#endif
 static void mp_trip_names(void);
 /* one LOBBY message for us */
 static void mp_recv(int64_t host, uint32_t from, const rc_lobby *m){
@@ -6236,7 +6249,7 @@ static void mp_recv(int64_t host, uint32_t from, const rc_lobby *m){
              * full lobby's.  From afar (past MP_STAY_M: an invite's Join, mp_far_join) only a friend or crew-mate.  A
              * friend or crew-mate stays in it wherever it drives (mp_away): its link to us may be a moment old, its car
              * not seen yet, and its own game leaves the lobby when it drives off from a start it joined at */
-            int mate = mp_mate(from);
+            int mate = mp_mate(from), far_ok = mate || mp_far_any();
             const PeerView *v = du_pv(from);
             float d = v && v->have_pose ? rc_sqrtf((v->pose.p[0] - g_mp.l.x) * (v->pose.p[0] - g_mp.l.x) +
                                                    (v->pose.p[1] - g_mp.l.y) * (v->pose.p[1] - g_mp.l.y)) : 0.f;
@@ -6244,7 +6257,7 @@ static void mp_recv(int64_t host, uint32_t from, const rc_lobby *m){
                 rlog("[roam] f=%ld race lobby %08x: a JOIN from a player not a friend or crew-mate: Friends & crew only\n", rh_frame(), g_mp.l.id);
                 mp_send_one(RC_LOBBY_LEAVE, RC_LL_FULL, from); return;
             }
-            if (d > MP_STAY_M && !mate){
+            if (d > MP_STAY_M && !far_ok){
                 rlog("[roam] f=%ld race lobby %08x: a JOIN from %.0f m away, not a friend or crew-mate: not taken\n", rh_frame(), g_mp.l.id, (double)d);
                 mp_send_one(RC_LOBBY_LEAVE, RC_LL_LEFT, from); return;
             }
@@ -6257,7 +6270,7 @@ static void mp_recv(int64_t host, uint32_t from, const rc_lobby *m){
                      rh_frame(), g_mp.l.id, js, cap);
                 mp_send_one(RC_LOBBY_LEAVE, RC_LL_FULL, from); return;
             }
-            if (mate) g_mp.far_mask |= (uint8_t)(1u << g_mp.l.n); else g_mp.far_mask &= (uint8_t)~(1u << g_mp.l.n);
+            if (mate || (far_ok && d > MP_STAY_M)) g_mp.far_mask |= (uint8_t)(1u << g_mp.l.n); else g_mp.far_mask &= (uint8_t)~(1u << g_mp.l.n);
             jd = d;
         }
         if ((m->t_ms & MP_COUNTS_ON) && (m->t_ms & 1u)) g_mp.l.counts |= (uint8_t)(1u << g_mp.l.n);
@@ -6458,6 +6471,34 @@ static void mp_far_join(int64_t host, int in_roam, uint32_t hid, uint32_t lid, u
     g_mp.asked_far = g_mp.far = 1;
     rlog("[roam] f=%ld race lobby %08x: joining from afar (an invite), %.0f m from its start\n", rh_frame(), lid, (double)mp_dist(l.x, l.y));
 }
+#ifdef ROAM_HOST_WIN
+/* a lobby heard of elsewhere that we may join from afar (the newest heard), 0 none: the plugin's JoinKey (J) */
+static MpLobby *mp_far_pick(int64_t host){
+    MpLobby *best = 0;
+    for (int i = 0; i < g_mp.nseen; i++){
+        MpLobby *l = &g_mp.seen[i];
+        if (!l->host || l->host == g_s.conf.self_id || !mp_shown(l) || host - l->heard > MP_GONE_US) continue;
+        if (mp_dist(l->x, l->y) <= MP_JOIN_M) continue;                   /* (at its start: Enter joins it) */
+        if (!best || l->heard > best->heard) best = l;
+    }
+    return best;
+}
+static const char *mp_join_key(void){ const char *k = rh_opt("NFSU2_ROAM_JOINKEY"); return k && *k && strcmp(k, "0") ? k : 0; }
+void roam_win_lobby_push(int act, uint32_t a, uint32_t b, uint32_t r);    /* roam_win.c: roam_plat_lobby_act's queue */
+/* the JoinKey (the game's thread, the frame hook's hotkeys): join the lobby offered on the top line from afar, or
+ * leave the one joined from afar */
+void roam_game_join_key(void){
+    if (!O.on || !g_net_ok) return;
+    int64_t host = roam_plat_now_us();
+    if ((g_mp.st == MP_IN || g_mp.st == MP_ASKED) && g_mp.far){ roam_win_lobby_push(ROAM_LB_LEAVE, 0, 0, 0); return; }
+    if (g_mp.st != MP_IDLE || !g_in_roam) return;
+    const char *no = mp_cannot();
+    if (no){ mp_note(host, no); return; }
+    MpLobby *f = mp_far_pick(host);
+    if (!f){ mp_note(host, "No race lobby to join from here right now"); return; }
+    roam_win_lobby_push(ROAM_LB_JOIN, f->host, f->id, MR32(f->race + 8u));
+}
+#endif
 /* the page's lobby actions (roam_plat_lobby_act): the card's next lobby (E), who can join (V), leave (Z from afar), an
  * invite's Join, a new lobby of our own here (B) */
 static void mp_act(int64_t host, int in_roam, int act, uint32_t a, uint32_t b, uint32_t r){
@@ -6696,6 +6737,9 @@ static int mp_line(int64_t host, char *tx, int n){
         snprintf(nm, sizeof nm, "%s", mp_name(g_mp.l.host));
         if (g_mp.l.away_s) snprintf(tx, (size_t)n, "%s seems away: the lobby closes in %d s", nm, g_mp.l.away_s);
         else snprintf(tx, (size_t)n, "%s's %s: %d of %d players. Waiting for %s to start", nm, race_kind(g_mp.l.race), g_mp.l.n, g_mp.l.max, nm);
+#ifdef ROAM_HOST_WIN
+        if (g_mp.far && mp_join_key()){ size_t k = strlen(tx); snprintf(tx + k, (size_t)n - k, " (%s: leave)", mp_join_key()); }
+#endif
         return 1;
     case MP_COUNT:
         snprintf(tx, (size_t)n, "Starting the race...");
@@ -6720,6 +6764,16 @@ static int mp_line(int64_t host, char *tx, int n){
                      mp_counts(sp->race) ? "a win counts in your career" : mpw_text[sp->why]);
             return 1;
         }
+#ifdef ROAM_HOST_WIN
+        {
+            MpLobby *f = mp_far_pick(host);
+            if (f && !mp_cannot() && mp_join_key()){
+                snprintf(tx, (size_t)n, "%s hosts a multiplayer %s (%d of %d), %.0f m away: press %s to join from here", mp_name(f->host),
+                         race_kind(f->race), f->n, f->max, (double)mp_dist(f->x, f->y), mp_join_key());
+                return 1;
+            }
+        }
+#endif
         break; }
     }
     if (g_mp.note[0] && host < g_mp.note_until){ snprintf(tx, (size_t)n, "%s", g_mp.note); return 1; }
@@ -7142,6 +7196,25 @@ static const char *mp_kind_tx(uint32_t r){
 uint32_t language_add_text(const char *name, const char *text);
 uint32_t language_text(uint32_t hash);
 void language_texts_frame(CPU *c);
+#ifdef ROAM_HOST_WIN
+/* The plugin cannot add texts to the game's language table (the port's language.c): its dialogs take the game's own
+ * two labels of its yes/no questions (0xF770 and 0x61C, its "exit LAN mode?" and the others), and the question says
+ * which button is which by its place (mp_card): right whatever the two words are */
+#define LBL_GAME_A      0x0000f770u   /* the left button of the game's own two-button questions */
+#define LBL_GAME_B      0x0000061cu   /* ...the right one */
+static void mp_lang(CPU *c){
+    (void)c;
+    mp_lang_hash[0] = LBL_GAME_B; mp_lang_hash[1] = LBL_GAME_A; mp_lang_hash[2] = LBL_GAME_A; mp_lang_hash[3] = 0x541389e5u;   /* Solo, Multi, Join, Cancel */
+}
+void language_game_letters(const char *utf8, char *out, size_t n){
+    size_t k = 0;
+    for (const unsigned char *p = (const unsigned char *)utf8; *p && k + 1 < n; p++){
+        if (*p < 0x80) out[k++] = (char)*p;
+        else if ((*p & 0xc0) == 0xc0) out[k++] = '?';                  /* (one ? for each multi-byte letter) */
+    }
+    if (n) out[k] = 0;
+}
+#else
 static void mp_lang(CPU *c){
     static const MpTexts *was;
     const MpTexts *tx = mp_tx();
@@ -7154,6 +7227,7 @@ static void mp_lang(CPU *c){
     }
     language_texts_frame(c);                  /* in the table at once: a question may come this frame */
 }
+#endif
 /* a two-button question over package `from` (a name in guest memory).  The
  * dialog's text is a format the game's vsprintf (0x43FBC0) fills in, and ours
  * has another player's name in it (a name with "%n" or "%999d" in it wrote
@@ -7175,9 +7249,8 @@ static int mp_ask(CPU *c, uint32_t from, const char *text, int l1, int l2, uint3
     g_mpd.asked++;
     return rd32(G_DLG_ID) != 0;
 }
-/* the card's handler: on Accept our question first */
-void sub_00499c00(CPU *c);
-static void mp_card_ret(CPU *c){ POP32(c->eip); c->esp += 0x10u; }
+/* the card's handler: on Accept our question first (mp_card_msg: 1 the message was ours, the game's handler not
+ * called; the port's dispatch_patch of 0x499C00 and the plugin's vtable entry both go through it) */
 /* the card closed as Decline (0x499BB0) closes it, but for its "declined"
  * mark in the career (Career 0x5138F0) */
 static void mp_card_close(CPU *c, uint32_t self){
@@ -7188,21 +7261,19 @@ static void mp_card_close(CPU *c, uint32_t self){
     gcall1(c, FN_ENGAGE_EXIT, rd32(G_ENGAGE_MGR), 1);
     MR8(self + 0x51u) = 1;
 }
-static void mp_card(CPU *c){
-    uint32_t self = c->ecx, msg = MR32(c->esp + 4u), obj = MR32(c->esp + 8u);
+static int mp_card_msg(CPU *c, uint32_t self, uint32_t msg, uint32_t obj){
     int64_t host = roam_plat_now_us();
-    if (!O.on || !g_net_ok){ sub_00499c00(c); return; }
+    if (!O.on || !g_net_ok) return 0;
     if (g_mp.st != MP_IDLE && g_mp.st != MP_TRIP && g_mpd.dlg != MPD_CARD && !MR8(self + 0x51u)){
         /* in a race lobby, Enter (start, or nothing) at an open race's marker
          * engaged the race too: its card goes at once, as Multiplayer closes it */
         rlog("[roam] f=%ld race card: in a race lobby, closed\n", rh_frame());
         mp_card_close(c, self);
-        mp_card_ret(c);
-        return;
+        return 1;
     }
     if (msg == MSG_BUTTON && ok(obj, 0x14) && MR32(obj + 0x10u) == CARD_ACCEPT && !MR8(self + 0x51u) && g_mp.st == MP_IDLE){
         uint32_t r = rd32(G_ENGAGED_RACE);
-        if (!r || !race_lan(r)){ sub_00499c00(c); return; }                        /* a race no LAN race can be: as before */
+        if (!r || !race_lan(r)) return 0;                                         /* a race no LAN race can be: as before */
         MpLobby *l = mp_joinable();                                                /* (the lobby card's page: else a new lobby) */
         char t[320];
         /* (with others a win counts too where it counts with Solo: mp_counts; a friend's win too); in the game's
@@ -7214,6 +7285,11 @@ static void mp_card(CPU *c){
             snprintf(u, sizeof u, tx->q_lobby, mp_name(l->host), mp_kind_tx(l->race));
             if (counts && l->race == r){ size_t n = strlen(u); snprintf(u + n, sizeof u - n, "%s", tx->q_lobby_counts); }
         } else snprintf(u, sizeof u, "%s", counts ? tx->q_counts : tx->q_prize);
+#ifdef ROAM_HOST_WIN
+        /* (the game's own two labels: which is which said by their places, mp_lang) */
+        { size_t n = strlen(u); snprintf(u + n, sizeof u - n, "%s", l ? "  LEFT button: race it on your own (Solo).  RIGHT button: join the lobby."
+                                                                       : "  LEFT button: open a lobby for the other player (Multiplayer).  RIGHT button: race it on your own (Solo)."); }
+#endif
         language_game_letters(u, t, sizeof t);
         uint32_t from = rd32(self + 4u);
         /* the dialog opens with its right button focused: Solo there, Multiplayer left, so Enter at once races it Solo,
@@ -7222,13 +7298,12 @@ static void mp_card(CPU *c){
          * into a Solo race (2026-11-03) */
         int ok_q = l ? mp_ask(c, from, t, 0, 2, MSG_MP_SOLO, MSG_MP_MULTI, MSG_MP_BACK)
                      : mp_ask(c, from, t, 1, 0, MSG_MP_MULTI, MSG_MP_SOLO, MSG_MP_BACK);
-        if (!ok_q){ sub_00499c00(c); return; }
+        if (!ok_q) return 0;
         g_mpd.dlg = MPD_CARD; g_mpd.card = self; g_mpd.race = r;
         /* (which text in which language, not the text: it names the lobby's host, and players post their logs) */
         rlog("[roam] f=%ld race card: Solo or Multiplayer? (%s, %s%s)\n", rh_frame(), tx->lang, l ? "a lobby here" : counts ? "it counts" : "prize money only",
              l && counts && l->race == r ? ", it counts" : "");
-        mp_card_ret(c);
-        return;
+        return 1;
     }
     if ((msg == MSG_MP_SOLO || msg == MSG_MP_MULTI || msg == MSG_MP_BACK) && g_mpd.dlg == MPD_CARD && self == g_mpd.card){
         g_mpd.dlg = MPD_NONE;
@@ -7240,14 +7315,32 @@ static void mp_card(CPU *c){
             mp_card_close(c, self);
             mp_engage_spot(host, g_mpd.race);
         }
-        mp_card_ret(c);
-        return;
+        return 1;
     }
+    return 0;
+}
+#ifdef ROAM_HOST_WIN
+/* the original game: EngageRaceDialog's vtable (0x78F990) entry 0, its handler's only caller, through here */
+#define VT_CARD         0x0078f990u
+typedef uint32_t (__attribute__((thiscall)) *card_fn)(uint32_t self, uint32_t msg, uint32_t obj, uint32_t a3, uint32_t a4);
+static card_fn g_card_orig;
+static uint32_t __attribute__((thiscall)) mp_card_win(uint32_t self, uint32_t msg, uint32_t obj, uint32_t a3, uint32_t a4){
+    if (mp_card_msg(0, self, msg, obj)) return 0;
+    return g_card_orig(self, msg, obj, a3, a4);
+}
+int roam_win_vtpatch(uint32_t vt, uint32_t want, uint32_t fn);           /* mprace_win.c */
+static void mp_card_patch(void){ if (roam_win_vtpatch(VT_CARD, FN_CARD, (uint32_t)(uintptr_t)mp_card_win)) g_card_orig = (card_fn)(uintptr_t)FN_CARD; }
+#else
+void sub_00499c00(CPU *c);
+static void mp_card(CPU *c){
+    if (mp_card_msg(c, c->ecx, MR32(c->esp + 4u), MR32(c->esp + 8u))){ POP32(c->eip); c->esp += 0x10u; return; }
     sub_00499c00(c);
 }
+static void mp_card_patch(void){ dispatch_patch(FN_CARD, mp_card); }
+#endif
 /* per frame: the patch once, our labels, the answer over the HUD */
 static void mp_ui_frame(CPU *c, int64_t host, int in_roam, int press, const MpSpot *sp){
-    if (!g_mpd.patched){ dispatch_patch(FN_CARD, mp_card); g_mpd.patched = 1; }
+    if (!g_mpd.patched){ mp_card_patch(); g_mpd.patched = 1; }
     mp_lang(c);
     if (g_mpd.dlg == MPD_CARD && !rd32(G_DLG_ID) && !career_card_up()) g_mpd.dlg = MPD_NONE;       /* the card went another way */
     if (!press || !in_roam || g_mp.st != MP_IDLE || g_mpd.dlg) return;

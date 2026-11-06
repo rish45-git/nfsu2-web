@@ -55,6 +55,7 @@ int  roam_keys_vk(const char *s);
 void roam_keys_hotkey(int vk, void (*fn)(void), const char *what);
 void roam_keys_report(void);
 void roam_win_server_next(void);                  /* roam_win.c: the server switch */
+void roam_game_join_key(void);                    /* runtime/roam_game.c: the race lobby's JoinKey */
 void roam_win_server_frame(void);
 int  roam_win_servers(void);
 void roam_game_report(void);
@@ -133,6 +134,9 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_SERVERS",     "Servers",    ""  },  /* name=url[|claim]; ...: the servers the ServerKey goes through */
     { "NFSU2_ROAM_SERVERKEY",   "ServerKey",  "F8" }, /* the next server of Servers (0: none) */
     { "NFSU2_ROAM_LABELS",      "Labels",     ""  },  /* names over friends' cars (default 1) */
+    { "NFSU2_ROAM_JOINKEY",     "JoinKey",    "J" },  /* join the race lobby the top line offers, from afar (0: none) */
+    { "NFSU2_ROAM_FARJOIN",     "FarJoin",    "1" },  /* hosting: anyone in the room may join from afar (0: friends only) */
+    { "NFSU2_ROAM_PARTNER",     "Partner",    ""  },  /* the other player's name: as a friend in race lobbies (its win counts) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },
@@ -684,6 +688,9 @@ static void init_once(void){
             if (vk) roam_keys_hotkey(vk, roam_win_server_next, "ServerKey: the next server");
             roam_log("[roam] server switch: %s goes to the next of the %d server(s) in Servers\n", vk ? k : "no key (ServerKey)", roam_win_servers());
         }
+        const char *j = roam_opt("NFSU2_ROAM_JOINKEY");
+        int jv = roam_keys_vk(j);
+        if (jv && jv != vk) roam_keys_hotkey(jv, roam_game_join_key, "JoinKey: join (or leave) the race lobby offered from afar");
     }
     g_ready = 1;
     roam_log("[roam] ready: the network starts with the game's first frame\n");
