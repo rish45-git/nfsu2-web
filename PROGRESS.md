@@ -335,6 +335,13 @@ work. Still untested: the laptop winning (Partner on the desktop's side), drag a
 The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then "out of range" about every 65 s) are
 the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
 
+**To do, decided later (2026-11-07):**
+- Partner and races not finished: the friend's win counts only in a race we finished. In the drift race the laptop was
+  at 2 of 4 laps when the desktop finished, the game ended its race ("not finished"), so it got nothing. Choice for the
+  player: count the friend's win whenever we stayed in to the end (only quitting loses it), or keep it as is.
+- ToHost (commit 7b31bd8d, the joiner's car next to the host's after a race): built, asi_check PASS, not installed or
+  tried in the game yet (the desktop's game held the file; the laptop's copy is in C:\dev\laptop-update).
+
 **To do, seen in the second test:** opening the car's doors (the game's door/hatch animation, standing still in free
 roam) opens the doors of every player's car on that screen too, and the other player's screen shows none of it: the
 door state is the game's own for all cars of that model (both are COROLLAs) and is not sent. Fix: keep the doors to
