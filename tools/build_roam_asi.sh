@@ -33,11 +33,11 @@ VER="${ROAM_ASI_VERSION:-1.0}"
 # -ffreestanding, no stack protector, no unwind tables: no C runtime at all.
 CFLAGS="-std=c11 -O2 -march=i686 -msse2 -mfpmath=sse -mstackrealign -ffp-contract=off -fno-strict-aliasing \
  -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fno-pic \
- -Wall -Wextra -Wno-unused-parameter -DROAM_HOST_WIN -DROAM_ASI_VERSION=\"$VER\" -Iwin/roam_asi -Iruntime"
+ -Wall -Wextra -Wno-unused-parameter -DROAM_HOST_WIN -DROAM_ASI_VERSION=\"$VER\" -Iwin/roam_asi -Iwin/online -Iruntime"
 LDFLAGS="-shared -nostdlib -Wl,--subsystem,windows:5.1 -Wl,--no-insert-timestamp -Wl,--dynamicbase -Wl,--nxcompat -Wl,--image-base,0x10000000 \
  -Wl,--enable-reloc-section -Wl,--disable-auto-import -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
  -Wl,--major-subsystem-version,5 -Wl,--minor-subsystem-version,1"
-LIBS="-lkernel32 -lws2_32 -lgcc"
+LIBS="-lkernel32 -lws2_32 -lwinhttp -lgcc"
 # the exe check's table, from the game's exe when it is here (it is
 # committed: the build also works without the exe)
 EXE="${NFSU2_DATA:-$ROOT/../../gamedata}/SPEED2.EXE"
@@ -50,8 +50,9 @@ $CC $CFLAGS -c -o "$O/obj/roam_core.o" runtime/roam_core.c
 $CC $CFLAGS -c -o "$O/obj/roam_game.o" runtime/roam_game.c
 $CC $CFLAGS -c -o "$O/obj/roam_win.o"  win/roam_asi/roam_win.c
 $CC $CFLAGS -c -o "$O/obj/roam_asi.o"  win/roam_asi/roam_asi.c
+$CC $CFLAGS -c -o "$O/obj/switch.o"    win/online/switch.c
 $CC $CFLAGS -fno-builtin -fno-tree-loop-distribute-patterns -c -o "$O/obj/roam_libc.o" win/roam_asi/roam_libc.c
-OBJS="$O/obj/roam_asi.o $O/obj/roam_game.o $O/obj/roam_win.o $O/obj/roam_core.o $O/obj/roam_libc.o"
+OBJS="$O/obj/switch.o $O/obj/roam_asi.o $O/obj/roam_game.o $O/obj/roam_win.o $O/obj/roam_core.o $O/obj/roam_libc.o"
 $CC $LDFLAGS -e _DllMain@12 -Wl,-Map,"$O/NFSU2FreeRoam.map" -o "$O/dbg/NFSU2FreeRoam.asi" $OBJS $LIBS
 # the shipped file: the same link without the symbol table (strip(1) would
 # stamp the time into the header; tools/asi_check.py compares the sections)

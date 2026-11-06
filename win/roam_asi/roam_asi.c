@@ -114,6 +114,8 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_NAME",        "Name",       ""  },
     { "NFSU2_ROAM_PORT",        "Port",       ""  },
     { "NFSU2_ROAM_PEERS",       "Peers",      ""  },
+    { "NFSU2_ROAM_SERVER",      "Server",     ""  },  /* ws://host:port/lan: play on a server's virtual LAN, not the local one */
+    { "NFSU2_ROAM_CLAIM",       "Claim",      ""  },  /* the token of a claimed name (the server's page makes it) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },
     { "NFSU2_ROAM_ROOM",        "Room",       ""  },

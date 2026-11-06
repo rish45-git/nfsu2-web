@@ -4,9 +4,9 @@
   tools/asi_check.py out/win/NFSU2FreeRoam.asi [SPEED2.EXE]
 
   1. PE: 32-bit x86 DLL, GUI subsystem, DYNAMIC_BASE + NX_COMPAT, relocations,
-     no TLS, no section both writable and executable, under 256 KB.
+     no TLS, no section both writable and executable, under 384 KB.
   2. Exports exactly InitializeASI; the entry point is DllMain.
-  3. Imports only KERNEL32 and WS2_32, and only the functions listed here
+  3. Imports only KERNEL32, WS2_32 and WINHTTP, and only the functions listed here
      (no C runtime, no libgcc/winpthread DLL, nothing a friend's PC lacks:
      every one exists since Windows XP).
   4. The frame hook site in SPEED2.EXE (0x581475) holds the call the plugin
@@ -35,7 +35,14 @@ ALLOWED = {
         'GetModuleFileNameA', 'GetModuleHandleA', 'GetPrivateProfileStringA', 'GetTickCount',
         'InitializeCriticalSection', 'InterlockedCompareExchange', 'LeaveCriticalSection', 'QueryPerformanceCounter',
         'QueryPerformanceFrequency', 'Sleep', 'TryEnterCriticalSection', 'VirtualProtect', 'VirtualQuery',
-        'WaitForSingleObject', 'WriteFile', 'lstrcmpA', 'lstrcmpiA', 'lstrcpyA', 'lstrlenA'},
+        'WaitForSingleObject', 'WriteFile', 'lstrcmpA', 'lstrcmpiA', 'lstrcpyA', 'lstrlenA',
+        # online play (win/online/switch.c)
+        'GetProcessHeap', 'HeapAlloc', 'HeapFree', 'HeapReAlloc'},
+    # online play: the WebSocket to the server's switch (Windows 8 or newer; only used with Server = in the .ini)
+    'WINHTTP.dll': {
+        'WinHttpCloseHandle', 'WinHttpConnect', 'WinHttpOpen', 'WinHttpOpenRequest', 'WinHttpQueryHeaders',
+        'WinHttpReceiveResponse', 'WinHttpSendRequest', 'WinHttpSetOption', 'WinHttpWebSocketCompleteUpgrade',
+        'WinHttpWebSocketQueryCloseStatus', 'WinHttpWebSocketReceive', 'WinHttpWebSocketSend'},
     'WS2_32.dll': {
         'WSACleanup', 'WSAGetLastError', 'WSAIoctl', 'WSAStartup', '__WSAFDIsSet', 'bind', 'closesocket',
         'ioctlsocket', 'recvfrom', 'select', 'sendto', 'setsockopt', 'socket'},
@@ -69,7 +76,7 @@ def main():
     check(tls.VirtualAddress == 0 and tls.Size == 0, 'no TLS directory (nothing runs before DllMain)')
     wx = [s.Name.rstrip(b'\0').decode() for s in pe.sections if s.Characteristics & 0x80000000 and s.Characteristics & 0x20000000]
     check(not wx, 'no section both writable and executable%s' % (' (' + ', '.join(wx) + ')' if wx else ''))
-    check(len(data) < 256 * 1024, 'under 256 KB')
+    check(len(data) < 384 * 1024, 'under 384 KB')
     check(pe.FILE_HEADER.TimeDateStamp == 0, 'no time stamp (reproducible build)')
     dbg = os.path.join(os.path.dirname(asi), 'dbg', os.path.basename(asi))
     if os.path.exists(dbg) and dbg != asi:

@@ -24,6 +24,7 @@
 #undef far
 #undef near
 #include "roam_plat.h"
+#include "switch.h"                       /* win/online: the client of the server's virtual LAN switch */
 
 void roam_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 const char *roam_opt(const char *name);
@@ -47,6 +48,15 @@ static int              g_wsa;
 static int              g_threaded;
 static int64_t          g_next_tick;
 static LARGE_INTEGER    g_qpf;
+
+/* Online (Server = ws://host:port/lan in the .ini): no UDP socket.  The datagrams go to the server's virtual LAN
+ * switch as kind-1 frames (runtime/web/net_proto.h NET_KIND_UDP), the players near us come from its free-roam hub
+ * (10.77.0.253), exactly as in the browser (runtime/web/roam_web.c) */
+static sw              *g_sw;
+static int              g_online;
+static volatile LONG    g_vip, g_mask;     /* our virtual address and netmask, from the welcome */
+static int64_t          g_sw_start_at;     /* the switch starts when the player's name is known (or after 45 s) */
+static char             g_server[200];
 
 static void mu_init(void){
     if (InterlockedCompareExchange(&g_mu_init, 1, 0) == 0){ InitializeCriticalSection(&g_mu); g_mu_init = 2; }
@@ -108,7 +118,26 @@ int roam_plat_guard(int test_mode, uint32_t ip, int is_bcast){
 /* ---- sending (with the lock held, from either thread) ------------------------------ */
 static uint16_t be16(uint16_t v){ return (uint16_t)(v >> 8 | v << 8); }
 static uint32_t be32(uint32_t v){ return v >> 24 | (v >> 8 & 0xFF00u) | (v << 8 & 0xFF0000u) | v << 24; }
+static void do_send_online(uint32_t ip, uint16_t port, const uint8_t *buf, int len, int is_bcast){
+    uint32_t vip = (uint32_t)g_vip, mask = (uint32_t)g_mask, dst = ip;
+    if (!vip || !g_sw) return;                                      /* no address yet: dropped, as UDP would */
+    if (is_bcast) dst = SW_BROADCAST;
+    else {
+        if ((ip & mask) != (vip & mask)){
+            g_st.send_err++;
+            if (g_st.send_err <= 5 || g_st.send_err % 1000 == 0){
+                char b[16]; roam_log("[roam] sendto %s:%u failed: not an address on the virtual LAN (Peers takes the "
+                                     "virtual 10.77.x.x addresses online)\n", roam_ip_str(ip, b), port);
+            }
+            return;
+        }
+        if (ip == ((vip & mask) | ~mask)) dst = SW_BROADCAST;
+    }
+    if (sw_send_udp(g_sw, SW_KIND_UDP, dst, g_cfg.port, port, buf, len)){ g_st.sent++; g_st.sent_bytes += (uint64_t)len; }
+    else g_st.send_err++;
+}
 static void do_send(uint32_t ip, uint16_t port, const uint8_t *buf, int len, int is_bcast){
+    if (g_online){ do_send_online(ip, port, buf, len, is_bcast); return; }
     if (!roam_plat_guard(g_cfg.test_mode, ip, is_bcast) || g_fd == INVALID_SOCKET) return;
     struct sockaddr_in sa; memset(&sa, 0, sizeof sa);
     sa.sin_family = AF_INET; sa.sin_port = be16(port); sa.sin_addr.s_addr = be32(ip);
@@ -141,6 +170,7 @@ int roam_bcast_targets(const roam_if *ifs, int n, uint32_t *out, int max){
 }
 static void io_broadcast(void *u, uint16_t port, const uint8_t *buf, int len){
     (void)u;
+    if (g_online){ if (g_cfg.discovery) do_send_online(0xFFFFFFFFu, port, buf, len, 1); return; }   /* every browser on the switch */
     if (g_cfg.test_mode || !g_cfg.discovery){ roam_plat_guard(1, 0xFFFFFFFFu, 1); return; }
     roam_if ifs[32]; int n = 0;
     INTERFACE_INFO il[32]; DWORD got = 0;
@@ -164,10 +194,12 @@ static void io_broadcast(void *u, uint16_t port, const uint8_t *buf, int len){
 static void io_event(void *u, int ev, int peer, const char *text){ (void)u; roam_game_event(ev, peer, text); }
 
 /* ---- receiving and the timers (network thread, or the frame hook) ---------------------- */
+static void online_start_switch(void);
 static void pump(void){
     uint8_t buf[1500];
     int64_t now = roam_plat_now_us();
-    for (int k = 0; k < 256; k++){
+    if (g_online && !g_sw) online_start_switch();
+    for (int k = 0; k < 256 && !g_online; k++){
         struct sockaddr_in sa; int sl = sizeof sa;
         int n = recvfrom(g_fd, (char *)buf, sizeof buf, 0, (struct sockaddr *)&sa, &sl);
         if (n < 0){
@@ -190,15 +222,65 @@ static DWORD WINAPI net_main(LPVOID u){
     uint32_t mx = roam_win_mxcsr_default();            /* the core's floats: round to nearest, no FTZ/DAZ */
     __asm__ volatile ("ldmxcsr %0" :: "m"(mx));
     while (!g_stop){
-        fd_set rs; FD_ZERO(&rs); FD_SET(g_fd, &rs);
-        struct timeval tv = { 0, 5000 };
-        (void)select(0, &rs, 0, 0, &tv);
+        if (g_online) Sleep(5);                          /* the switch's reader thread feeds the datagrams */
+        else {
+            fd_set rs; FD_ZERO(&rs); FD_SET(g_fd, &rs);
+            struct timeval tv = { 0, 5000 };
+            (void)select(0, &rs, 0, 0, &tv);
+        }
         pump();
     }
     return 0;
 }
 /* NetThread=0: called by the frame hook instead */
-void roam_win_poll(void){ if (g_fd != INVALID_SOCKET && !g_threaded && g_s) pump(); }
+void roam_win_poll(void){ if ((g_fd != INVALID_SOCKET || g_online) && !g_threaded && g_s) pump(); }
+
+/* ---- online: the switch client's callbacks (its reader thread) ---------------------------------- */
+static void sw_log(void *u, const char *line){ (void)u; roam_log("[roam] switch: %s\n", line); }
+static void sw_welcome(void *u, uint32_t vip, uint32_t mask, const char *token){
+    (void)u; (void)token;
+    char b[16];
+    InterlockedExchange(&g_mask, (LONG)mask); InterlockedExchange(&g_vip, (LONG)vip);
+    roam_log("[roam] on the server's virtual LAN as %s\n", roam_ip_str(vip, b));
+}
+static void sw_frame(void *u, const uint8_t *f, int len){
+    (void)u;
+    uint32_t mx = roam_win_mxcsr_default();            /* the core's floats, on this thread too */
+    __asm__ volatile ("ldmxcsr %0" :: "m"(mx));
+    if (len < 16 || f[0] != SW_KIND_UDP || !g_s) return;
+    uint32_t src = (uint32_t)f[4] << 24 | (uint32_t)f[5] << 16 | (uint32_t)f[6] << 8 | f[7];
+    uint32_t dst = (uint32_t)f[8] << 24 | (uint32_t)f[9] << 16 | (uint32_t)f[10] << 8 | f[11];
+    uint16_t sport = (uint16_t)(f[12] << 8 | f[13]), dport = (uint16_t)(f[14] << 8 | f[15]);
+    uint32_t vip = (uint32_t)g_vip;
+    int n = len - 16;
+    if (dport != g_cfg.port || !vip || src == vip || (dst != vip && dst != SW_BROADCAST)) return;
+    int64_t now = roam_plat_now_us();
+    roam_plat_lock();
+    g_st.recv++; g_st.recv_bytes += (uint64_t)n;
+    if (n > RC_MAX_DGRAM){ g_s->rx++; g_s->rx_bad++; }
+    else rc_receive(g_s, src, sport, f + 16, n, now);
+    roam_plat_unlock();
+}
+static void sw_removed(void *u, int ban, const char *msg){
+    (void)u;
+    roam_log("[roam] the server's operator %s this player%s%s%s: no more online play this session\n", ban ? "banned" : "kicked",
+             *msg ? " (\"" : "", msg, *msg ? "\")" : "");
+}
+static void sw_queue(void *u, int pos, int of){ (void)u; roam_log("[roam] the server is full: in line, %d of %d\n", pos, of); }
+static void online_start_switch(void){
+    if (g_sw) return;
+    char name[40]; int i = 0;
+    roam_plat_lock(); for (; g_s->conf.name[i] && i < 39; i++) name[i] = g_s->conf.name[i]; name[i] = 0; roam_plat_unlock();
+    int named = lstrcmpA(name, "Player") != 0;
+    int64_t now = roam_plat_now_us();
+    if (!g_sw_start_at) g_sw_start_at = now + 45000000;
+    if (!named && now < g_sw_start_at) return;             /* the profile's name comes with the first frames */
+    sw_options o = { g_server, name, roam_opt("NFSU2_ROAM_CLAIM"), 0, 10000 };
+    sw_callbacks cb = { sw_welcome, sw_frame, 0, sw_queue, sw_removed, 0, 0, sw_log, 0 };
+    g_sw = sw_start(&o, &cb);
+    roam_log("[roam] joining the server's switch %s as \"%s\"%s\n", g_server, name, g_sw ? "" : " FAILED (bad URL?)");
+    if (!g_sw) g_online = 0;
+}
 
 int roam_plat_start(const roam_plat_cfg *cfg, rc_session *s){
     g_cfg = *cfg; g_s = s;
@@ -210,6 +292,21 @@ int roam_plat_start(const roam_plat_cfg *cfg, rc_session *s){
         g_cfg.discovery = 0;
     }
     if (g_cfg.impair && *g_cfg.impair) roam_log("[roam] NFSU2_ROAM_IMPAIR is a Mac test aid: ignored here\n");
+    const char *srv = roam_opt("NFSU2_ROAM_SERVER");
+    if (srv && !g_cfg.test_mode){
+        int i = 0; for (; srv[i] && i < (int)sizeof g_server - 1; i++) g_server[i] = srv[i];
+        g_server[i] = 0;
+        g_online = 1; g_threaded = 1; g_stop = 0; g_next_tick = 0; g_sw_start_at = 0;
+        roam_plat_lock();
+        s->io = (rc_io){ 0, io_send, io_broadcast, io_event };
+        s->conf.hub_ip = SW_VIP_ROAM_HUB; s->conf.hub_port = g_cfg.port;       /* the players near us, from the server */
+        s->conf.snap_states = 1;                           /* the WebSocket loses nothing: only the newest state */
+        roam_plat_unlock();
+        g_thr = CreateThread(0, 64 * 1024, net_main, 0, 0, 0);
+        if (!g_thr){ roam_log("[roam] CreateThread failed (%lu): online play needs its thread\n", GetLastError()); g_online = 0; return -1; }
+        roam_log("[roam] online: the server %s (virtual LAN UDP port %u), the players near us from its free-roam hub\n", g_server, g_cfg.port);
+        return 0;
+    }
     if (!g_wsa){
         WSADATA wd;
         int e = WSAStartup(MAKEWORD(2, 2), &wd);
@@ -249,6 +346,15 @@ int roam_plat_start(const roam_plat_cfg *cfg, rc_session *s){
 /* exiting: whether the network thread may still hold the lock (at process
  * exit Windows has already stopped every other thread) */
 void roam_plat_stop(uint8_t reason){
+    if (g_online){
+        mu_init();
+        if (TryEnterCriticalSection(&g_mu)){ rc_shutdown(g_s, reason); LeaveCriticalSection(&g_mu); }   /* BYE to the hub and peers */
+        g_stop = 1;
+        if (g_thr){ WaitForSingleObject(g_thr, 200); CloseHandle(g_thr); g_thr = 0; }
+        if (g_sw){ sw_stop(g_sw); g_sw = 0; }
+        g_online = 0;
+        return;
+    }
     if (g_fd == INVALID_SOCKET) return;
     mu_init();
     if (TryEnterCriticalSection(&g_mu)){ rc_shutdown(g_s, reason); LeaveCriticalSection(&g_mu); }
