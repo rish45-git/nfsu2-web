@@ -546,11 +546,10 @@ static int hud_install(void){
  * screens to the other players on the switch, as in the browser.  Only the exe's import table changes, in memory (the
  * plugin's own WinHTTP and Winsock imports are its own); the file is never touched. */
 int roam_win_online_init(void);                     /* roam_win.c */
-static int iat_patch(void){
-    uint8_t *base = (uint8_t *)(uintptr_t)EXE_BASE;
+static int iat_patch_of(uint8_t *base, const char *who){
     IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(base + ((IMAGE_DOS_HEADER *)base)->e_lfanew);
     IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress || !readable(EXE_BASE + dir.VirtualAddress, dir.Size)){ roam_log("[lan] the exe's import table is not readable\n"); return 0; }
+    if (!dir.VirtualAddress || !readable((uint32_t)(uintptr_t)base + dir.VirtualAddress, dir.Size)){ roam_log("[lan] %s: its import table is not readable\n", who); return 0; }
     int want = 0, n = 0;
     for (const vs_import *v = vs_imports; v->dll; v++) want++;
     for (IMAGE_IMPORT_DESCRIPTOR *id = (IMAGE_IMPORT_DESCRIPTOR *)(base + dir.VirtualAddress); id->Name; id++){
@@ -567,8 +566,17 @@ static int iat_patch(void){
                 if (IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal)){ if (v->ord && (int)IMAGE_ORDINAL32(ot->u1.Ordinal) == v->ord) hit = v; }
                 else if (!lstrcmpA((const char *)((IMAGE_IMPORT_BY_NAME *)(base + ot->u1.AddressOfData))->Name, v->name)) hit = v;
             }
-            if (!hit){ roam_log("[lan]   %s import %s%u not redirected (the plugin has no stand-in)\n", dll,
-                                IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal) ? "#" : "rva ", (unsigned)(ot->u1.Ordinal & 0xFFFFu)); continue; }
+            if (!hit){
+                const char *nm = IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal) ? 0 : (const char *)((IMAGE_IMPORT_BY_NAME *)(base + ot->u1.AddressOfData))->Name;
+                /* (the byte-order helpers need no network: server.dll's htons, htonl, ntohs, ntohl stay Windows') */
+                if (nm && (!lstrcmpA(nm, "htons") || !lstrcmpA(nm, "htonl") || !lstrcmpA(nm, "ntohs") || !lstrcmpA(nm, "ntohl"))) continue;
+                if (!nm && !lstrcmpiA(dll, "ws2_32.dll")){                     /* (#8 htonl, #9 htons, #14 ntohl, #15 ntohs) */
+                    unsigned o = (unsigned)(ot->u1.Ordinal & 0xFFFFu);
+                    if (o == 8 || o == 9 || o == 14 || o == 15) continue;
+                }
+                if (nm) roam_log("[lan]   %s: %s import %s not redirected (the plugin has no stand-in)\n", who, dll, nm);
+                else roam_log("[lan]   %s: %s import #%u not redirected (the plugin has no stand-in)\n", who, dll, (unsigned)(ot->u1.Ordinal & 0xFFFFu));
+                continue; }
             DWORD old;
             if (!VirtualProtect(&ft->u1.Function, 4, PAGE_READWRITE, &old)){ roam_log("[lan] VirtualProtect failed (%lu)\n", GetLastError()); return n; }
             ft->u1.Function = (DWORD)(uintptr_t)hit->fn;
@@ -576,14 +584,64 @@ static int iat_patch(void){
             n++;
         }
     }
-    roam_log("[lan] the game's network goes to the server's virtual LAN: %d imports of SPEED2.EXE redirected "
-             "(the plugin has %d stand-ins)\n", n, want);
+    roam_log("[lan] %s's network goes to the server's virtual LAN: %d of its imports redirected "
+             "(the plugin has %d stand-ins)\n", who, n, want);
     return n;
+}
+static int iat_patch(void){ return iat_patch_of((uint8_t *)(uintptr_t)EXE_BASE, "SPEED2.EXE"); }
+
+/* EA's LAN server (server.dll, the game's Host LAN Server and mprace.c's host): the game loads it with LoadLibraryA
+ * when a LAN game is hosted (StartLANServer 0x5FA300) and frees it on leaving LAN (UnloadServer 0x5F08F0).  It has
+ * Winsock imports of its own (by name), so the exe's LoadLibraryA import goes through the plugin: each time
+ * server.dll loads, its import table is redirected to the virtual Winsock too (before the game calls into it), so the
+ * host's LAN server listens on its virtual address, its LAN broadcast reaches the other players on the switch, and
+ * they connect to it there.  Nothing else loaded is touched. */
+typedef HMODULE (WINAPI *LoadLibraryA_t)(LPCSTR);
+static LoadLibraryA_t g_real_loadlib;
+static HMODULE g_srv_patched;
+static int is_server_dll(const char *path){
+    if (!path) return 0;
+    const char *b = path;
+    for (const char *q = path; *q; q++) if (*q == '\\' || *q == '/') b = q + 1;
+    return !lstrcmpiA(b, "server.dll") || !lstrcmpiA(b, "server");
+}
+static void server_dll_patch(HMODULE h, const char *how){
+    if (!h || h == g_srv_patched) return;
+    if (iat_patch_of((uint8_t *)h, "server.dll") > 0){ g_srv_patched = h; roam_log("[lan] server.dll (%s at 0x%08x): the LAN server is on the virtual LAN\n", how, (uint32_t)(uintptr_t)h); }
+}
+static HMODULE WINAPI hk_LoadLibraryA(LPCSTR name){
+    HMODULE h = g_real_loadlib(name);
+    if (h && is_server_dll(name)) server_dll_patch(h, "loaded");
+    return h;
+}
+static void loadlib_hook(void){
+    uint8_t *base = (uint8_t *)(uintptr_t)EXE_BASE;
+    IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(base + ((IMAGE_DOS_HEADER *)base)->e_lfanew);
+    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return;
+    for (IMAGE_IMPORT_DESCRIPTOR *id = (IMAGE_IMPORT_DESCRIPTOR *)(base + dir.VirtualAddress); id->Name; id++){
+        if (lstrcmpiA((const char *)(base + id->Name), "kernel32.dll") || !id->OriginalFirstThunk) continue;
+        IMAGE_THUNK_DATA32 *ot = (IMAGE_THUNK_DATA32 *)(base + id->OriginalFirstThunk), *ft = (IMAGE_THUNK_DATA32 *)(base + id->FirstThunk);
+        for (; ot->u1.AddressOfData; ot++, ft++){
+            if (IMAGE_SNAP_BY_ORDINAL32(ot->u1.Ordinal)) continue;
+            if (lstrcmpA((const char *)((IMAGE_IMPORT_BY_NAME *)(base + ot->u1.AddressOfData))->Name, "LoadLibraryA")) continue;
+            DWORD old;
+            if (!VirtualProtect(&ft->u1.Function, 4, PAGE_READWRITE, &old)) return;
+            g_real_loadlib = (LoadLibraryA_t)(uintptr_t)ft->u1.Function;
+            ft->u1.Function = (DWORD)(uintptr_t)hk_LoadLibraryA;
+            VirtualProtect(&ft->u1.Function, 4, old, &old);
+            roam_log("[lan] the exe's LoadLibraryA goes through the plugin: server.dll (the LAN server) will be on the virtual LAN too\n");
+            server_dll_patch(GetModuleHandleA("server.dll"), "loaded already");
+            return;
+        }
+    }
+    roam_log("[lan] no LoadLibraryA import in the exe: a hosted LAN server would stay off the virtual LAN\n");
 }
 static void online_setup(void){
     if (!roam_win_online_init()) return;
     if (!vs_patch_lobby_host()) roam_log("[lan] the Online menu will not reach the server (see above); LAN play still goes to the virtual LAN\n");
     iat_patch();
+    loadlib_hook();
 }
 
 /* ---- start-up ---------------------------------------------------------------------------------------- */

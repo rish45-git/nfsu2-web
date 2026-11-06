@@ -229,6 +229,15 @@ shared code still takes more, we just do not build or test for it.)
   core, with stand-ins for the game) against the local server with a roambot: **all 17 checks pass** (refused while
   blocked, refused while switching, a new vip on each server, the old server's player dropped, the bot linked again
   on the new server, back). Not tried: F8 in the game, the HUD line and names over cars in the game, the key taps.
+- Step 2 (commit "Phase 6 step 2"): the exe's LoadLibraryA import (0x783198; StartLANServer 0x5FA300 calls it with
+  "server") goes through the plugin; each time server.dll loads, its imports go to vsock too (it imports Winsock
+  **by ordinal**, WSAIoctl by name; htonl/htons/ntohl/ntohs #8/#9/#14/#15 stay Windows'). `out/win/srvprobe.exe`
+  (`win/online/srvprobe.c`): the player's own server.dll (from `C:\Games\NFSU2-online`, never copied) loaded in a probe
+  with the same patch, `StartServer("PROBEHOST", 0)`: 23 imports redirected, its WSAStartup brought the switch up,
+  **it listens on its vip:9900, says `slave update (addr=10.77.14.2:9900)`, broadcasts on UDP 9999 (12 in 30 s), and
+  a second process joined it over the switch** (`srvprobe join`, through 192.168.0.109: TCP connect accepted); clean
+  StopServer and WSACleanup. Before the ordinal fix it ran on the real network (`addr=172.24.192.1`), which is what the
+  game would have done. Not tried: hosting from the game's LAN menu (by hand) with the laptop joining.
 
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two

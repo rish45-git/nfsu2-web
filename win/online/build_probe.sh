@@ -27,3 +27,7 @@ $CC -std=gnu11 -O2 -msse2 -mfpmath=sse -mstackrealign -ffp-contract=off -fno-str
 $CC -std=gnu11 -O2 -msse2 -mfpmath=sse -Wall -Wextra -Iwin/online -Iruntime -c -o "$O/obj/swaptest.o" win/online/swaptest.c
 $CC -o "$O/swaptest.exe" "$O/obj/swaptest.o" "$O/obj/st_roamwin.o" "$O/obj/rb_core.o" "$O/obj/switch.o" "$O/obj/vsock.o" "$O/obj/vsock_ws2.o" -lwinhttp -lws2_32 -lm
 ls -la "$O/swaptest.exe"
+# srvprobe: the game's server.dll (from the player's game folder) on the virtual LAN, a host and a joiner
+$CC -std=c11 -O2 -Wall -Wextra -D_WIN32_WINNT=0x0602 -Iwin/online -c -o "$O/obj/srvprobe.o" win/online/srvprobe.c
+$CC -o "$O/srvprobe.exe" "$O/obj/srvprobe.o" "$O/obj/vsock_ws2.o" "$O/obj/vsock.o" "$O/obj/switch.o" "$O/obj/vp_libc.o" -lwinhttp -lws2_32
+ls -la "$O/srvprobe.exe"
