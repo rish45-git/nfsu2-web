@@ -698,6 +698,7 @@ static void online_setup(void){
     loadlib_hook();
 }
 
+void showoff_win_install(void);                  /* showoff_win.c */
 /* ---- start-up ---------------------------------------------------------------------------------------- */
 static void init_once(void){
     if (g_inited) return;
@@ -724,6 +725,7 @@ static void init_once(void){
     online_setup();                                 /* before the game's first Winsock call (its LAN or Online menu) */
     if (!hook_install()) return;
     g_hud_on = hud_install();
+    if (opt_int("NFSU2_ROAM_SHOWOFF", 1)) showoff_win_install();   /* friends' cars' own open parts (showoff_win.c) */
     {
         const char *k = roam_opt("NFSU2_ROAM_SERVERKEY");
         int vk = roam_keys_vk(k);

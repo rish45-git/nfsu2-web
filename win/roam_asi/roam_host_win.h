@@ -57,10 +57,13 @@ uint64_t    roam_win_ns(void);
 #define rh_carsfx_begin(pos, fwd, vel)    ((void)(pos), (void)(fwd), (void)(vel))
 #define rh_carsfx_car(who, name, p, v, st) ((void)(who), (void)(name), (void)(p), (void)(v), (void)(st))
 #define rh_carsfx_end()  ((void)0)
-/* no show-off here: the companion opens no parts and shows friends' cars closed (showoff.c needs the port's
- * overrides of the cars' drawing) */
-#define rh_showoff_mine() ((uint8_t)0)
-#define rh_showoff_car(c, k, car, open) ((void)(c), (void)(k), (void)(car), (void)(open))
+/* the cars' open parts (showoff_win.c): the player's, read from the game (a mod's or the game's own opening), go to
+ * friends; each friend's car shows its own, not the player's (the game keeps them per car type) */
+uint8_t showoff_win_mine(void);
+void    showoff_win_car(int k, uint32_t car, uint8_t open);
+void    showoff_win_install(void);
+#define rh_showoff_mine() showoff_win_mine()
+#define rh_showoff_car(c, k, car, open) ((void)(c), showoff_win_car((k), (car), (open)))
 /* no light key here either: the companion's lights are the game's, and friends' cars show theirs */
 #define rh_lights_mine() 0
 #define rh_lights_car(k, car, st) ((void)(k), (void)(car), (void)(st))
