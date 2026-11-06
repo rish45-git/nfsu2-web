@@ -116,3 +116,15 @@ stance): drive stock cars online, or disable them in the test copy.
 3. Start it (`... run`), check http://127.0.0.1:8080/players from Windows (if Windows cannot reach it: WSL's
    mirrored networking, `networkingMode=mirrored` in `%UserProfile%\.wslconfig`).
 4. Phase 1: the switch client and its console probe.
+
+## Local server (verified 2026-11-06)
+
+- Built in WSL: `~/.cache/nfsu2-native/target/release/nfsu2-server` and `nfsu2-roamload`.
+- **Port 8080 is taken on this PC by Steam's web helper** (`steamwebhelper` listens on 127.0.0.1:8080, and answers
+  404 to everything): use `NFSU2_HTTP_PORT=8691`. Start it detached from Git Bash:
+  `MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'NFSU2_HTTP_PORT=8691 nohup setsid bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run > ~/nfsu2-server.log 2>&1 < /dev/null & disown'`
+- Windows reaches it at `http://127.0.0.1:8691/` (WSL localhost forwarding works, no mirrored mode needed);
+  `/players` answers `{"players":0,...}`; the switch is `ws://127.0.0.1:8691/lan`.
+- `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
+  p50 latency 27 ms, hub and switch work. The server log shows each join/leave as `[lan] 10.77.x.2 joined`.
+- Startup notes: Online (10.77.0.1) and the free-roam hub (10.77.0.253) are on; `game.wasm` is missing (not needed).
