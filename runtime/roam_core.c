@@ -1531,7 +1531,21 @@ void rc_receive(rc_session *s, uint32_t ip, uint16_t port, const uint8_t *buf, i
         }
         return;
     }
-    if (e){ s->rx_bad++; return; }
+    if (e){
+        s->rx_bad++;
+        if (s->rx_bad <= 8){                                   /* the first few, for the log: what failed and how it began */
+            char t[200]; uint32_t n = 0;
+            static const char hx[] = "0123456789abcdef";
+            cat(t, &n, sizeof t, "a datagram from "); cat_addr(t, &n, sizeof t, ip, port);
+            cat(t, &n, sizeof t, " was refused: error "); cat_u(t, &n, sizeof t, (uint32_t)-e);
+            cat(t, &n, sizeof t, ", type "); cat_u(t, &n, sizeof t, len > 5 ? buf[5] : 0);
+            cat(t, &n, sizeof t, ", "); cat_u(t, &n, sizeof t, (uint32_t)len); cat(t, &n, sizeof t, " bytes: ");
+            for (int i = 0; i < len && i < 24 && n + 3 < sizeof t; i++){ t[n++] = hx[buf[i] >> 4]; t[n++] = hx[buf[i] & 15]; t[n++] = ' '; }
+            t[n] = 0;
+            note(s, RC_EV_NOTE, -1, t, "", "");
+        }
+        return;
+    }
     if (m.h.sender == s->conf.self_id) return;                 /* our own beacon */
     if (s->conf.hub_ip && ip == s->conf.hub_ip && port == s->conf.hub_port){
         /* the hub's list of the players near us: each one is a candidate
