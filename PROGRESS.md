@@ -318,6 +318,16 @@ happens again. Built, asi_check PASS; not yet tried in the game (the running gam
 quitting). Also seen: the laptop's game does not go full screen (its own display settings or d3d9 wrapper, not the
 plugin).
 
+**Second test (2026-11-06 23:08–23:42), the step-6 plugin on the desktop:** the LAN menu by hand works (server.dll
+"is on the virtual LAN", listening on 10.77.25.2:9900, the laptop joined and raced). **The first native race trip
+works end to end** (STAGE_1_SHORT_1, Street X, 4 laps): the desktop's card → Yes (Multiplayer), the laptop's J from
+23 m, the host's Enter; both games drove out, the race ran, the results, the crib and back to free roam at the marker
+in about 3.5 minutes. Desktop: 1st, "we won it: it counts", the career's $250 and the place's $150 top-up ($50 →
+$450). Laptop: 2nd, Partner worked ("our friend won it: it counts", winner Rishi), $250 + $50 top-up; its way back
+passed a "Connecting to lobby..." the trip called off by itself. No FAULT or FAILED on either side. Also fixed: the
+vsock "unread for 20 s" warning counted from the last read, so the LAN server's 21 s keep-alives were reported as
+stalls (it now counts from the data's arrival).
+
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
    local entries (the same server under 127.0.0.1 and 192.168.0.109, so the swap is real), free roam's friend car gone
