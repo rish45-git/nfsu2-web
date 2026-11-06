@@ -1,11 +1,11 @@
 /* roambot.c -- simulated free-roam players that speak the REAL protocol (runtime/roam_core.c, the same core as the
  * game and the browser), for testing the native plugin against a server without a second game.
  *
- *   roambot.exe <ws://host:port/lan> <car record file> [n=3] [x=0] [y=0] [z=0] [seconds=600] [room name]
+ *   roambot.exe <ws://host:port/lan> <car record file> [n=3] [x=0] [y=0] [z=0] [seconds=600] [room name] [radius=8]
  *
  * Each bot joins the server's switch as its own player (own virtual address), talks to the free-roam hub like a game
  * (HELLO, SNAPs, the hub's PEERS), shows the car in the record file (the plugin saves yours with DumpCar = 1 in its
- * .ini: scripts\NFSU2FreeRoam.car) and drives round a circle of 30 m (staggered) round x,y,z, so a real game next to
+ * .ini: scripts\NFSU2FreeRoam.car) and drives round a small circle (radius 8 m by default, staggered) round x,y,z, so a real game next to
  * that spot sees friends, the world map and the minimap show players.  Unlike web/server-rs/crates/roamload (a
  * load generator for the server, whose states are not the protocol's), a game accepts these.
  *
@@ -31,7 +31,7 @@ typedef struct {
     CRITICAL_SECTION mu;
     volatile LONG vip, mask;
     unsigned long long frames_in;
-    float cx, cy, cz, phase;
+    float cx, cy, cz, phase, radius;
 } bot;
 
 static int64_t now_us(void){
@@ -75,7 +75,8 @@ static void on_log(void *u, const char *l){ bot *b = u; if (b->n == 0) printf("[
 
 /* the state of bot b at time t (s): a circle of 30 m at 12 m/s round (cx, cy, cz) */
 static void state_at(const bot *b, double t, rc_state *st){
-    const double R = 30.0, V = 12.0, w = V / R;
+    /* the bots know no roads or walls and one height: keep the circle small, where the ground is flat and open */
+    const double R = b->radius, V = R * 0.4 < 12.0 ? R * 0.4 : 12.0, w = V / R;
     double a = b->phase + t * w;
     memset(st, 0, sizeof *st);
     st->t_us = (uint32_t)now_us();
@@ -120,6 +121,8 @@ int main(int argc, char **argv){
     float x = argc > 4 ? (float)atof(argv[4]) : 0.f, y = argc > 5 ? (float)atof(argv[5]) : 0.f, z = argc > 6 ? (float)atof(argv[6]) : 0.f;
     double seconds = argc > 7 ? atof(argv[7]) : 600.0;
     const char *room = argc > 8 ? argv[8] : "";
+    float radius = argc > 9 ? (float)atof(argv[9]) : 8.f;            /* metres: a circle, slow (0.4 x radius m/s) */
+    if (radius < 2.f) radius = 2.f;
     static uint8_t car[RC_CFG_MAX]; int carlen = 0;
     rc_carcfg cc; int e = 0;
     if (!strcmp(argv[2], "synth")){       /* a made-up record: the bots see each other, a game may not know the car */
@@ -137,7 +140,7 @@ int main(int argc, char **argv){
     bot *bots = calloc((size_t)n, sizeof *bots); run *runs = calloc((size_t)n, sizeof *runs); HANDLE *th = calloc((size_t)n, sizeof *th);
     for (int i = 0; i < n; i++){
         bot *b = &bots[i]; b->n = i; snprintf(b->name, sizeof b->name, "RoamBot%d", i + 1);
-        b->cx = x; b->cy = y; b->cz = z; b->phase = (float)(i * 6.2831853 / n);
+        b->cx = x; b->cy = y; b->cz = z; b->radius = radius; b->phase = (float)(i * 6.2831853 / n);
         InitializeCriticalSection(&b->mu);
         b->s = calloc(1, sizeof *b->s);
         rc_config cf; memset(&cf, 0, sizeof cf);
