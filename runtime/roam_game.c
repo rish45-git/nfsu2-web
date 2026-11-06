@@ -5812,6 +5812,19 @@ static const char *mp_name(uint32_t id){
 static int mp_friend(uint32_t id){
     const rc_peer *p = mp_peer(id);
     if (!p) return 0;
+#ifdef ROAM_HOST_WIN
+    /* the plugin's Partner = <name> (it has no page for the friends list): the player of that name (as over its car)
+     * is a friend in race lobbies -- its win in our race counts in our career (mprace.c MPC_FRIEND), it may join from
+     * afar and past our stage.  A name is anyone's who types it: with a private Room, only the two players are there */
+    {
+        const char *pn = rh_opt("NFSU2_ROAM_PARTNER");
+        static uint32_t said;
+        if (pn && *pn && p->name[0] && !strcasecmp(pn, p->name)){
+            if (said != id){ said = id; rlog("[roam] f=%ld Partner \"%s\": a friend in race lobbies (its win in our race counts in our career)\n", rh_frame(), p->name); }
+            return 1;
+        }
+    }
+#endif
     const char *e = mp_test_env("NFSU2_MPRACE_TEST_FRIENDS");
     if (e && *e){
         size_t n = strlen(p->name);

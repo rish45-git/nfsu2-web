@@ -263,6 +263,12 @@ shared code still takes more, we just do not build or test for it.)
   line), notices on the top line, the lobby actions' queue. The plugin: 502,272 bytes, asi_check PASS; swaptest still
   17/17. **Not tried in the game: none of the lobby, the card's question, the trip.** The exe fingerprint does not
   cover the lobby's game functions (roam_fingerprint.py is still broken, see above).
+- Step 5 (commit "Phase 6 step 5"): `Partner = <name>` in `mp_friend` (Windows only): that player is a friend in race
+  lobbies, so `mp_trip_names` puts it in `MpRace.friends` and mprace.c's `credit_decide` gives `MPC_FRIEND` when it
+  wins a race we finished that counts in our career (then the native mpcredit's `win_now` in the crib); it may also
+  join from afar and past our stage. Logged once: `[roam] Partner "NAME": a friend in race lobbies ...`. Builds,
+  asi_check PASS. The shared files (mprace.c, roam_game.c) also compile on the port's path (`-fsyntax-only` with a
+  stand-in for the Mac's mach_time.h): no errors; the browser build itself was not run.
 
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
