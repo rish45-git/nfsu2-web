@@ -114,6 +114,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_NAME",        "Name",       ""  },
     { "NFSU2_ROAM_PORT",        "Port",       ""  },
     { "NFSU2_ROAM_PEERS",       "Peers",      ""  },
+    { "NFSU2_ROAM_DUMPCAR",     "DumpCar",    ""  },  /* test aid: save the car's record as NFSU2FreeRoam.car (for roambot) */
     { "NFSU2_ROAM_SERVER",      "Server",     ""  },  /* ws://host:port/lan: play on a server's virtual LAN, not the local one */
     { "NFSU2_ROAM_CLAIM",       "Claim",      ""  },  /* the token of a claimed name (the server's page makes it) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
@@ -321,6 +322,17 @@ void roam_asi_fault(void){
     roam_plat_stop(1);                            /* BYE: friends remove this car at once */
 }
 long roam_win_frame_no(void){ return g_frame; }
+/* the car's look record to <the .ini's name>.car (DumpCar = 1), for win/online/roambot.c */
+void roam_win_dump_car(const uint8_t *b, int n){
+    char path[MAX_PATH + 8]; int k = lstrlenA(g_ini);
+    if (k < 5 || k > MAX_PATH) return;
+    for (int i = 0; i < k - 4; i++) path[i] = g_ini[i];
+    path[k - 4] = '.'; path[k - 3] = 'c'; path[k - 2] = 'a'; path[k - 1] = 'r'; path[k] = 0;
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD w; WriteFile(h, b, (DWORD)n, &w, 0); CloseHandle(h);
+    roam_log("[roam] the car's record (%d bytes) saved to %s\n", n, path);
+}
 uint64_t roam_win_ns(void){
     static LARGE_INTEGER f; LARGE_INTEGER c;
     if (!f.QuadPart && (!QueryPerformanceFrequency(&f) || !f.QuadPart)) f.QuadPart = 1000;

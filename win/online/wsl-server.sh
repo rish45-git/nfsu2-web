@@ -4,7 +4,8 @@
 #   bash wsl-server.sh setup    once: the C compiler and Rust (asks for your sudo password)
 #   bash wsl-server.sh build    build nfsu2-server and nfsu2-roamload from this checkout
 #   bash wsl-server.sh run      start the server: http://127.0.0.1:8080, /lan for the clients (Ctrl+C stops it)
-#   bash wsl-server.sh bots [n] [seconds]
+#   bash wsl-server.sh bots [n] [seconds]   (a LOAD generator: its cars are not valid for a real game; for a game use
+#                               out/win/roambot.exe, win/online/roambot.c, built by build_probe.sh)
 #                               n simulated free-roam players (default 3, 600 s) on the running server, driving
 #                               round the career start (NFSU2_BOT_CENTER="x,y,z" moves them; free roam only links
 #                               players near each other, and only in the same room: the bots are in room 0, as a

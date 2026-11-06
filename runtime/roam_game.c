@@ -9443,7 +9443,13 @@ void roam_game_frame(CPU *c){
     if (cfgn > 0){
         uint16_t before = g_s.cfg_rev;
         rc_set_cfg(&g_s, cfgb, cfgn, host);
-        if (g_s.cfg_rev != before) rlog("[roam] f=%ld my car: %s, %d-byte record, revision %u\n", rh_frame(), tname, cfgn, g_s.cfg_rev);
+        if (g_s.cfg_rev != before){
+            rlog("[roam] f=%ld my car: %s, %d-byte record, revision %u\n", rh_frame(), tname, cfgn, g_s.cfg_rev);
+#ifdef ROAM_HOST_WIN
+            {   const char *dc = rh_opt("NFSU2_ROAM_DUMPCAR");        /* test aid: the record to a file, for win/online/roambot.c */
+                if (dc && *dc && strcmp(dc, "0")){ extern void roam_win_dump_car(const uint8_t *b, int n); roam_win_dump_car(cfgb, cfgn); } }
+#endif
+        }
     }
     if (have_ls) rc_push_state(&g_s, &ls, host);
 #if COOP
