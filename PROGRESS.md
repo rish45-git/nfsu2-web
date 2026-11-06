@@ -46,9 +46,9 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 
 | Phase | What | State |
 |---|---|---|
-| 0 | branch, .gitignore, test copy, toolchain, the existing free-roam ASI built and tried, local server | **done but the server** (needs WSL 2) |
+| 0 | branch, .gitignore, test copy, toolchain, the existing free-roam ASI built and tried, local server | **done** |
 | 1 | switch client in C (WebSocket, hello/welcome, ping, queue, kick), a console probe against the local server | **done** (see below) |
-| 2 | free roam online: a switch transport for the ASI, the hub; exe-fingerprint generator fixed | |
+| 2 | free roam online: a switch transport for the ASI, the hub | **done** against simulated players (see below); not yet with a browser player; the exe-fingerprint generator is still unfixed |
 | 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | the bulk |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
@@ -109,13 +109,16 @@ renamer, sound/animation mods, `server.dll`/`server.cfg` (EA's LAN server, the g
 **Unlimiter** (cars and parts browser players don't have; also the crash above) and **StanceMod** (only you see the
 stance): drive stock cars online, or disable them in the test copy.
 
-## Next (after the restart)
+## Next
 
-1. `wsl --install -d Ubuntu` in an admin terminal, restart Windows, then create the Linux user when Ubuntu opens.
-2. In Ubuntu: `bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh setup`, then `... build`.
-3. Start it (`... run`), check http://127.0.0.1:8080/players from Windows (if Windows cannot reach it: WSL's
-   mirrored networking, `networkingMode=mirrored` in `%UserProfile%\.wslconfig`).
-4. Phase 1: the switch client and its console probe.
+1. **Phase 3**, the game's own Online lobby (not started; wait for the go-ahead): redirect the exe's 22 ws2_32
+   imports (by ordinal) and `Netbios` through the switch client; `gethostbyname("pcnfs05.ea.com")` -> 10.77.0.1;
+   the `*pcnfs05.ea.com` string at 0x7FBDBC -> `pcnfs05.ea.com`; TCP as the switch's stream frames (kind 4), UDP as
+   kind 3, ICMP echo as kind 5. `runtime/winsock.c` and `runtime/web/net_lan.c` describe the behaviour exactly.
+2. A test with a real browser player (needs the browser build of the repo, or th0mk's OK to use nfsu2.xyz).
+3. Smaller open items: fix `tools/roam_fingerprint.py` (read the names from the preprocessor); test the switch
+   client's queue (`--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://` and a claimed name; the build script's
+   last line uses macOS `stat -f`.
 
 ## Local server (verified 2026-11-06)
 
@@ -129,6 +132,43 @@ stance): drive stock cars online, or disable them in the test copy.
 - `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
   p50 latency 27 ms, hub and switch work. The server log shows each join/leave as `[lan] 10.77.x.2 joined`.
 - Startup notes: Online (10.77.0.1) and the free-roam hub (10.77.0.253) are on; `game.wasm` is missing (not needed).
+
+## Phase 2: free roam online (done 2026-11-06, with simulated players)
+
+- **How:** `NFSU2FreeRoam.ini`: `Server = ws://127.0.0.1:8691/lan` (`wss://host/lan` for HTTPS). `roam_win.c` then opens
+  no UDP socket: datagrams go through `win/online/switch.c` as kind-1 frames, the server's hub (10.77.0.253) picks the
+  players near us, one SNAP state per update, a thread ticks the session. The switch starts when the profile's name is
+  known (45 s at the latest). `Claim =` takes a claimed name's token. `Collide = 0` stays (ghost cars: you and friends
+  drive through each other; the shipped default). `DumpCar = 1` saves the car's record to `scripts\NFSU2FreeRoam.car`.
+  Needs Windows 8 or newer (WinHTTP WebSocket); `tools/asi_check.py` allows WINHTTP, four heap functions, < 384 KB.
+- **Results (test copy, all the player's mods):** joined the switch as 10.77.x.2 under the profile name, the hub
+  answered, 0 send errors. With 3 real-core bots the game logged `JOIN: RoamBot1/2/3 joined`, `3 friend(s)`, the
+  cars appeared (the screenshots: friend cars drive in the player's world, orange Players markers on the minimap,
+  the world map's markers drew), and `LEAVE ... car removed` when the bots stopped. The 3 bots saw each other and
+  the game too (`bad 0`).
+- **Fixed on the way:**
+  - Quitting the game crashed in `webio.dll` (WinHTTP, 0xC0000409): the plugin tried to close the WebSocket in
+    `DLL_PROCESS_DETACH`, when every other thread is already gone. Now `roam_win_exiting` (set in DllMain when
+    `reserved`) skips every WinHTTP call at exit (the server drops the player a few seconds later, as for a closed
+    tab). The run after it exited cleanly (no dump, "unloaded (game exit)").
+  - The core logs the first 8 refused datagrams (error, type, length, first bytes): that found the bots' problem.
+- **Lessons about the test tools (not plugin bugs):**
+  - The hub links and lists players of the **same room** only: `roamload` defaulted to room 7, the plugin has room 0
+    (empty `Room =`). `wsl-server.sh bots` now uses room 0 (`NFSU2_BOT_ROOM`).
+  - It links by **distance** too: the bots were 1.9 km away at the world origin. `NFSU2_BOT_CENTER="x,y,z"`; the
+    career start is (1695.3, -883.6, 24.1); the player's position can be read from the running game (read only):
+    `Player* = [0x8900AC]`, car = `[Player+4]`, position = floats at `car + 0x60` (wheel heights `car + 0x130 + 0x40*w + 0x38`).
+  - `nfsu2-roamload` is a **load generator**: its car states are not the protocol's (orientation as 4 floats, the
+    core reads 4 int16: "error 9, out of range"), so no real game ever accepts them. Use `out/win/roambot.exe`
+    (`win/online/roambot.c`, built by `win/online/build_probe.sh`): the real `roam_core.c` + `switch.c`.
+    `roambot.exe ws://127.0.0.1:8691/lan synth 3 <x> <y> <z> <seconds> "" [radius=8]`; `synth` is a made-up 350Z
+    record (the game accepts it), or the path of a `.car` file. Its wheel heights are +0.28 (a real car's 0.26 to
+    0.29), and it drives a small slow circle: the bots know no walls and one height (a 30 m circle went through the
+    plaza's walls and sank into its ground).
+- **Windows crash dumps:** `%LOCALAPPDATA%\CrashDumps\SPEED2.EXE*.dmp` (the first, 11:01, was Unlimiter's); the
+  minidump Python module reads them (`pip install minidump` in the venv).
+- **Not tested:** a browser player, the world map's markers for far players with real hub answers, a long session,
+  several real games at once, more than 3 friends, races, the Online lobby.
 
 ## Phase 1: the switch client (done 2026-11-06)
 
