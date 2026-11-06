@@ -47,7 +47,7 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | Phase | What | State |
 |---|---|---|
 | 0 | branch, .gitignore, test copy, toolchain, the existing free-roam ASI built and tried, local server | **done but the server** (needs WSL 2) |
-| 1 | switch client in C (WebSocket, hello/welcome, ping, queue, kick), a console probe against the local server | next |
+| 1 | switch client in C (WebSocket, hello/welcome, ping, queue, kick), a console probe against the local server | **done** (see below) |
 | 2 | free roam online: a switch transport for the ASI, the hub; exe-fingerprint generator fixed | |
 | 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | the bulk |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | |
@@ -121,10 +121,31 @@ stance): drive stock cars online, or disable them in the test copy.
 
 - Built in WSL: `~/.cache/nfsu2-native/target/release/nfsu2-server` and `nfsu2-roamload`.
 - **Port 8080 is taken on this PC by Steam's web helper** (`steamwebhelper` listens on 127.0.0.1:8080, and answers
-  404 to everything): use `NFSU2_HTTP_PORT=8691`. Start it detached from Git Bash:
-  `MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'NFSU2_HTTP_PORT=8691 nohup setsid bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run > ~/nfsu2-server.log 2>&1 < /dev/null & disown'`
+  404 to everything): use `NFSU2_HTTP_PORT=8691`. **Keep a `wsl.exe` session open for as long as it runs** (a process
+  started with nohup/setsid is killed when the last wsl.exe session ends). From Git Bash, as a background task:
+  `MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'NFSU2_HTTP_PORT=8691 exec bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run'`
 - Windows reaches it at `http://127.0.0.1:8691/` (WSL localhost forwarding works, no mirrored mode needed);
   `/players` answers `{"players":0,...}`; the switch is `ws://127.0.0.1:8691/lan`.
 - `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
   p50 latency 27 ms, hub and switch work. The server log shows each join/leave as `[lan] 10.77.x.2 joined`.
 - Startup notes: Online (10.77.0.1) and the free-roam hub (10.77.0.253) are on; `game.wasm` is missing (not needed).
+
+## Phase 1: the switch client (done 2026-11-06)
+
+- `win/online/switch.h`, `switch.c`: WinHTTP WebSocket client of `/lan`, KERNEL32 + WINHTTP only, compiled with the
+  plugin's freestanding flags (it can go into the ASI as it is). A reader thread runs the callbacks; a second thread
+  pings every `ping_ms`. Sends a plain hello (`name`, `lan`, optional `claim`): no bundle/compact/delta, so the server
+  sends and takes one frame per message. Reconnects by itself (250 ms doubling to 5 s) with `?queue`, and with
+  `?resume` + the old vip and token in the hello. Kick, ban and rename (messages or close codes 4001/4003/4004)
+  end it for good (`SW_REMOVED`). Close 1013 (full) just retries.
+- `win/online/probe.c`, `build_probe.sh`: `PATH="/c/msys64/mingw32/bin:$PATH" bash win/online/build_probe.sh` makes
+  `out/win/switch_probe.exe [url] [name] [seconds]`. Against the local server all 7 checks pass: welcome (the vip
+  and a 22-char token), the peer list with "NFSU2 Online" (`server:true`, 10.77.0.1), an ICMP echo answered, a TCP SYN
+  to 20920 answered with SYNACK, a SYN to a closed port with RST, UDP to 10.77.0.1 with port-unreachable, ping/pong
+  (0.4 to 0.6 ms). Restarting the server mid-run: the client retried (WinHTTP error 12029 = refused) and came back
+  with the same address (`[lan] 10.77.0.2 is back`).
+- Not tested yet: `queue` (needs a full server: `--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://`, a claimed
+  name, bundles (not used).
+- Frame layout for the LAN kinds, as the probe sends it: 16-byte header (kind, 0, 0, 0, src vip, dst vip, sport, dport),
+  then the 8-byte LAN header (op, ttl, 0, 0, connection id little-endian), then data. ICMP/echo payload starts with the
+  ICMP type (8 request, 0 reply). Replies come with the server's vip as the source.
