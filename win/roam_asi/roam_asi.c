@@ -138,6 +138,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_FARJOIN",     "FarJoin",    "1" },  /* hosting: anyone in the room may join from afar (0: friends only) */
     { "NFSU2_ROAM_PARTNER",     "Partner",    ""  },  /* the other player's name: as a friend in race lobbies (its win counts) */
     { "NFSU2_ROAM_TOHOST",      "ToHost",     "1" },  /* after a race of a lobby we joined: our car next to the host's (0: stay) */
+    { "NFSU2_ROAM_SHOWOFF",     "ShowOff",    "1" },  /* friends' cars with their own open parts, the player's sent (0: off) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },

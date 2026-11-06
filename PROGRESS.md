@@ -355,7 +355,16 @@ desktop's NFSU2Unlimiter.asi, its settings, UnlimiterData and NFSU2_StanceMod to
 file's SHA-256 checked); the laptop also got the ToHost plugin build then. Not tried in the game yet. Both PCs need the
 same mods: different car data breaks the dealer, and friends' cars would wear parts the other game lacks.
 
-**To do, seen in the second test:** opening the car's doors (the game's door/hatch animation, standing still in free
+**Car doors, built (commit 097e4e6a), not tried in the game yet:** win/roam_asi/showoff_win.c, the native
+runtime/showoff.c without its O key. The players open parts with the AnimationController mod (keys 1-5; it calls the
+game's 0x61F820), which opens them on the car TYPE's node list. Now 0x620AE0 (a car's drawing) and 0x615A10 (its
+lights) go through the plugin (a jump at each start, the 6 bytes replaced run from a page of the plugin's own): a
+friend's car is drawn with its type's list holding that car's own nodes only; the player's open parts are read from
+its type's list and sent (RC_OPEN_*); a friend's open parts open nodes of its own (0x433A80, 0x433D50). Only types the
+game has animations in for (the player's own) open on friends' cars; others show closed. ShowOff = 0 in the .ini
+turns the hooks off. Log lines "[showoff] ...".
+
+**Seen in the second test (the doors issue, the fix above):** opening the car's doors (the game's door/hatch animation, standing still in free
 roam) opens the doors of every player's car on that screen too, and the other player's screen shows none of it: the
 door state is the game's own for all cars of that model (both are COROLLAs) and is not sent. Fix: keep the doors to
 the player's own car, and send the door state with the car's state so the other screen shows it.
