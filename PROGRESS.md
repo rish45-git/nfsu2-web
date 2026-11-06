@@ -328,6 +328,11 @@ passed a "Connecting to lobby..." the trip called off by itself. No FAULT or FAI
 vsock "unread for 20 s" warning counted from the last read, so the LAN server's 21 s keep-alives were reported as
 stalls (it now counts from the data's arrival).
 
+**To do, seen in the second test:** opening the car's doors (the game's door/hatch animation, standing still in free
+roam) opens the doors of every player's car on that screen too, and the other player's screen shows none of it: the
+door state is the game's own for all cars of that model (both are COROLLAs) and is not sent. Fix: keep the doors to
+the player's own car, and send the door state with the car's state so the other screen shows it.
+
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
    local entries (the same server under 127.0.0.1 and 192.168.0.109, so the swap is real), free roam's friend car gone
