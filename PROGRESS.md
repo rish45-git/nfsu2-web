@@ -339,8 +339,12 @@ the distance-based send rate and the hub's range, not a fault; a little hysteres
 - Partner and races not finished: the friend's win counts only in a race we finished. In the drift race the laptop was
   at 2 of 4 laps when the desktop finished, the game ended its race ("not finished"), so it got nothing. Choice for the
   player: count the friend's win whenever we stayed in to the end (only quitting loses it), or keep it as is.
-- ToHost (commit 7b31bd8d, the joiner's car next to the host's after a race): built, asi_check PASS, not installed or
-  tried in the game yet (the desktop's game held the file; the laptop's copy is in C:\dev\laptop-update).
+- ToHost (commit 7b31bd8d, the joiner's car next to the host's after a race): **works** (00:30, a drag race
+  STAGE_1_DRAG_1 the laptop hosted and won, $350 → $750 with the top-up; the desktop, back in free roam at 00:30:07,
+  "jumps from 709 m away to its side" at 00:30:18). Drag races work too. The desktop's place was 0 ("not finished": the
+  game ends the race when the winner is in), so Partner gave it nothing: the open choice above.
+- The desktop's game hung once at 00:25:53, 40 s after its start, in the menus (Windows "stopped interacting", Id
+  1002; the plugin's frames ran until 00:25:51, no fault): cause unknown, not seen again.
 
 **The laptop's crash at the car dealer (2026-11-07 00:09), not the plugin:** SPEED2.EXE faulted at 0x513CCC (an
 access violation in the game's own code): the dealer works out which cars are locked from GlobalB's car-unlock table
