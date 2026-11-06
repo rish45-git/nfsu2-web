@@ -6572,6 +6572,21 @@ static void mp_pad(int64_t host, int in_roam){
     }
     pad_lobby_offer(l, r);
 }
+/* After a race of a lobby we joined (not hosted): back in free roam, our car goes next to the host's (a player's ask,
+ * 2026-11-07: the joiner came back where it was before, 1.5 km from the host).  Natively only (ToHost = 0 in the .ini
+ * turns it off); mp_back_frame does it once the host's car is out on our screen, within MP_BACK_US */
+#define MP_BACK_US      60000000
+static struct { uint32_t host; int64_t until, seen_at; } g_mpb;   /* seen_at: since when its car is out here */
+static void mp_back_frame(int64_t host, int in_roam);
+#ifdef ROAM_HOST_WIN
+static int mp_to_host_on(void){
+    static int v = -1;
+    if (v < 0){ const char *o = rh_opt("NFSU2_ROAM_TOHOST"); v = !(o && o[0] == '0' && !o[1]); rlog("[roam] race lobbies: ToHost %d\n", v); }
+    return v;
+}
+#else
+static int mp_to_host_on(void){ return 0; }
+#endif
 /* per frame */
 static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const uint32_t *from, const rc_lobby *in, int nin){
     for (int i = 0; i < nin; i++) mp_recv(host, from[i], &in[i]);
@@ -6655,6 +6670,8 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
             snprintf(t + n, sizeof t - n, " (your engine %+.0f%% to even out the cars)", (double)((ef - 1.f) * 100.f));
         }
         mp_report();
+        /* a race of a lobby we joined: next to its host once its car is here (mp_back_frame) */
+        if (!ours && ph == MPR_DONE && g_mp.l.host && mp_to_host_on()){ g_mpb.host = g_mp.l.host; g_mpb.until = host + MP_BACK_US; g_mpb.seen_at = 0; }
         mprace_ack();
         mp_note(host, t); mp_to(MP_IDLE, host);
         return;
@@ -9820,6 +9837,7 @@ void roam_game_frame(CPU *c){
     du_frame(c, host, in_roam, world_runs, duin, nduin);
 #if MPRACES
     mp_frame(c, host, in_roam, world_runs, mpfrom, mpin, nmpin);
+    mp_back_frame(host, in_roam && world_runs);
     mp_panel(host, in_roam);
 #endif
     g_engage = in_roam && world_runs && engage_ours();
@@ -9949,6 +9967,42 @@ void roam_game_report(void){
 }
 
 /* ---- script commands ("roam mp ...", roam.c; the port's test harness only) ------------------- */
+/* the player jumps (hot-position jump) back metres behind a car, left
+ * metres to its left, turned by turn degrees from its heading */
+static void jump_behind(uint32_t car, float back, float left, float turn){
+    float fx = MRF32(car + 0x90u), fy = MRF32(car + 0x94u), lx = MRF32(car + 0xa0u), ly = MRF32(car + 0xa4u);
+    MRF32(G_HOTPOS) = MRF32(car + 0x60u) - back * fx + left * lx; MRF32(G_HOTPOS + 4) = MRF32(car + 0x64u) - back * fy + left * ly;
+    MRF32(G_HOTPOS + 8) = MRF32(car + 0x68u) + 0.5f;
+    MR16(G_HOTPOS_ANGLE) = (uint16_t)(MR16(car + 0x40cu) + (int)(turn * 65536.0f / 360.0f));
+    MR8(G_HOTPOS_VALID) = 1; MR8(G_HOTPOS_JUMP) = 1;
+}
+/* back from a race of a lobby we joined (g_mpb, set in mp_frame): once the host's car is out on our screen (its slot
+ * active and shown, a sane place, a second after it came: its states, not the slot's first guess), our car jumps
+ * 6 m to its left, 2 m behind, its heading; the friends' cars are ghosts until clear of ours (as car_rescue).  Not
+ * when already within 40 m of it.  Given up after MP_BACK_US (the host still in its race, or out of range) */
+static void mp_back_frame(int64_t host, int in_roam){
+    if (!g_mpb.host) return;
+    if (host > g_mpb.until){
+        rlog("[roam] f=%ld race lobby: back next to its host: its car did not show within %d s, not done\n", rh_frame(), MP_BACK_US / 1000000);
+        g_mpb.host = 0; return;
+    }
+    if (!in_roam || g_mp.st != MP_IDLE) return;
+    uint32_t me = player_car();
+    if (!ok(me, 0x9e0) || !car_sane(me)) return;
+    for (int k = 0; k < NSLOT; k++){
+        Slot *s = &g_sl[k];
+        if (s->st != SL_ACTIVE || s->peer_id != g_mpb.host || s->hidden || s->unseen_since || !ok(s->car, 0x9e0) || !car_sane(s->car)) continue;
+        if (!g_mpb.seen_at) g_mpb.seen_at = host;
+        if (host - g_mpb.seen_at < 1000000) return;          /* (its first states) */
+        float dx = MRF32(s->car + 0x60u) - MRF32(me + 0x60u), dy = MRF32(s->car + 0x64u) - MRF32(me + 0x64u), d = rc_sqrtf(dx * dx + dy * dy);
+        g_mpb.host = 0;
+        if (d < 40.f){ rlog("[roam] f=%ld race lobby: back next to its host: already %.0f m from it\n", rh_frame(), (double)d); return; }
+        jump_behind(s->car, 2.f, 6.f, 0.f);
+        ghost_all(); g_teleports++;
+        rlog("[roam] f=%ld race lobby: back next to its host %s: our car jumps from %.0f m away to its side\n", rh_frame(), s->name, (double)d);
+        return;
+    }
+}
 #ifdef ROAM_HOST_SCRIPT
 /* the crew (1..) whose colour an FE object has, 0: none (mp status, mp map) */
 static int colour_crew(uint32_t o){
@@ -9962,15 +10016,6 @@ static int colour_crew(uint32_t o){
 static int colour_ai(uint32_t o){
     int32_t col[4];
     return fe_colour_get(o, col) && ((uint32_t)(col[2] & 0xff) << 16 | (uint32_t)(col[1] & 0xff) << 8 | (uint32_t)(col[0] & 0xff)) == g_ai_rgb;
-}
-/* the player jumps (hot-position jump) back metres behind a car, left
- * metres to its left, turned by turn degrees from its heading */
-static void jump_behind(uint32_t car, float back, float left, float turn){
-    float fx = MRF32(car + 0x90u), fy = MRF32(car + 0x94u), lx = MRF32(car + 0xa0u), ly = MRF32(car + 0xa4u);
-    MRF32(G_HOTPOS) = MRF32(car + 0x60u) - back * fx + left * lx; MRF32(G_HOTPOS + 4) = MRF32(car + 0x64u) - back * fy + left * ly;
-    MRF32(G_HOTPOS + 8) = MRF32(car + 0x68u) + 0.5f;
-    MR16(G_HOTPOS_ANGLE) = (uint16_t)(MR16(car + 0x40cu) + (int)(turn * 65536.0f / 360.0f));
-    MR8(G_HOTPOS_VALID) = 1; MR8(G_HOTPOS_JUMP) = 1;
 }
 /* the HUD's outrun icon is up (mp outrun): FN_HUD_OUTRUN's icon 9 in the
  * HUD's icon list (+0x58: 8 entries of 0x14 from +0x60, +0 its state, 0
