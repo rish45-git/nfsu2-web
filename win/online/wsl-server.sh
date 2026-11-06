@@ -7,7 +7,8 @@
 #   bash wsl-server.sh bots [n] [seconds]
 #                               n simulated free-roam players (default 3, 600 s) on the running server, driving
 #                               round the career start (NFSU2_BOT_CENTER="x,y,z" moves them; free roam only links
-#                               players near each other)
+#                               players near each other, and only in the same room: the bots are in room 0, as a
+#                               player with no Room in the .ini; NFSU2_BOT_ROOM=<hash> for another)
 #
 # Only the /lan WebSocket is needed by the native client, so neither the browser page (web/dist) nor the game
 # module (out/web/nfsu2.wasm) has to be built.  The server reads the game folder (--data: it insists on finding
@@ -46,7 +47,7 @@ case "${1:-}" in
     ;;
   bots)
     export NFSU2_BOT_CENTER="${NFSU2_BOT_CENTER:-1695,-883,24}"
-    exec "$BIN/nfsu2-roamload" --base "http://127.0.0.1:$PORT" --n "${2:-3}" --seconds "${3:-600}" --spread 150
+    exec "$BIN/nfsu2-roamload" --base "http://127.0.0.1:$PORT" --n "${2:-3}" --seconds "${3:-600}" --spread 150 --room "${NFSU2_BOT_ROOM:-0}"
     ;;
   *)
     sed -n 2,9p "$0"; exit 1
