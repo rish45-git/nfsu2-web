@@ -87,7 +87,7 @@ static void state_at(const bot *b, double t, rc_state *st){
     st->w[2] = (float)w;
     st->steer = 0.12f; st->throttle = 0.5f; st->rpm = 3500.f; st->speed = (float)V; st->gear = 3;
     st->ext = 1;
-    for (int i = 0; i < 4; i++) st->wz[i] = -0.30f;
+    for (int i = 0; i < 4; i++) st->wz[i] = 0.28f;                 /* a car at rest: 0.26 .. 0.29 in the game (car +0x168..) */
 }
 
 typedef struct { bot *b; const uint8_t *car; int carlen; double seconds; } run;
