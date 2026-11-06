@@ -301,6 +301,23 @@ network shows them leaving); the lobby's top line only shows while the HUD is up
 keys for the lobby; the trip has never run natively, so expect the first tries to stop somewhere: the `[mprace]`
 lines say where.
 
+**First test (2026-11-06 22:24–22:38, desktop + laptop on 192.168.0.109):** checklist steps 1, 2 and the lobby part
+of 4 work: both in free roam, names over the cars, ghost cars; F8 switched local → lan and the laptop came back in
+2.5 s; the race card's question (the left button is "Yes" = Multiplayer, the right "No" = Solo); the lobby opened,
+the laptop joined from afar with J (Partner recognised), the host's Enter started the trip, both games drove out to
+the LAN menus. **Then it failed:** "the LAN server did not start". server.dll had loaded and run (StartLANServer said
+so) but on the *real* network: the log has no `[lan] server.dll ... is on the virtual LAN` line, every connect to the
+host's 10.77.x.x:9900 was refused, and the manual Host LAN Server (step 3) failed the same way ("Connecting to
+lobby...", then "lost your connection"). Cause, read from the running game: the exe's LoadLibraryA slot 0x783198 held
+kernel32's own LoadLibraryA again (0x75c82310) — another module (the ASI loader or the d3d9.dll wrapper) put the
+original back after the plugin hooked it; the ws2_32 slots stayed redirected. **Fix (step 6):** StartLANServer's own
+`call [0x783198]` at 0x5FA311 (the exe's only load of "server") now reads a pointer cell of the plugin's
+(`srv_callsite_patch`, log `StartLANServer's load of server.dll (0x005fa311) goes through the plugin`), and a frame
+check logs `server.dll ... loaded without the plugin: it is on the REAL network` with the slot's owner if it ever
+happens again. Built, asi_check PASS; not yet tried in the game (the running game held the file: install it after
+quitting). Also seen: the laptop's game does not go full screen (its own display settings or d3d9 wrapper, not the
+plugin).
+
 **Steps** (each built and checked before the next):
 1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
    local entries (the same server under 127.0.0.1 and 192.168.0.109, so the swap is real), free roam's friend car gone

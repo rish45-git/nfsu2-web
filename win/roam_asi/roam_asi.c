@@ -400,6 +400,7 @@ uint64_t roam_win_ns(void){
     return (uint64_t)(c.QuadPart / f.QuadPart) * 1000000000ull + (uint64_t)(c.QuadPart % f.QuadPart) * 1000000000ull / (uint64_t)f.QuadPart;
 }
 static uint32_t g_world_last;
+static void server_dll_watch(void);         /* (below, with the LoadLibraryA hook) */
 void roam_asi_frame(void){
     if (g_dead || !g_ready) return;
     __asm__ volatile ("stmxcsr %0" : "=m"(g_game_mxcsr));
@@ -419,6 +420,7 @@ void roam_asi_frame(void){
     roam_keys_mute(mprace_owns_input());          /* (the trip drives the game's menus: the player's keys wait) */
     roam_game_frame(0);
     roam_win_server_frame();
+    server_dll_watch();
     g_guard = 0;
     __asm__ volatile ("ldmxcsr %0" :: "m"(g_game_mxcsr));
 }
@@ -625,6 +627,45 @@ static HMODULE WINAPI hk_LoadLibraryA(LPCSTR name){
     if (h && is_server_dll(name)) server_dll_patch(h, "loaded");
     return h;
 }
+/* StartLANServer's own load of server.dll: `push "server"; call [IAT LoadLibraryA]` at 0x5FA30C/0x5FA311 (the only
+ * load of "server" in the exe).  Hooking the IAT slot alone was not enough: in the first live test (2026-11-06) the
+ * slot had been re-hooked by the time the player hosted (another module, after the plugin's start: the ASI loader
+ * hooks LoadLibraryA too), so server.dll loaded without the plugin seeing it and ran on the real network, and every
+ * player's connect to the host's 10.77.x.x:9900 was refused.  So that call's operand points at a cell of the
+ * plugin's own (the call reads it each time; nothing else writes it), which calls kernel32's LoadLibraryA itself;
+ * the IAT hook stays for any other path. */
+#define LANSRV_LOADCALL 0x005fa311u
+#define IAT_LOADLIB     0x00783198u
+static LoadLibraryA_t g_srv_loadcell = hk_LoadLibraryA;
+static int srv_callsite_patch(void){
+    uint8_t *p = (uint8_t *)(uintptr_t)LANSRV_LOADCALL;
+    static const uint8_t want[6] = { 0xff, 0x15, 0x98, 0x31, 0x78, 0x00 };   /* call [0x783198] */
+    for (int i = 0; i < 6; i++) if (p[i] != want[i]){
+        roam_log("[lan] StartLANServer's load of server.dll (0x%08x) is not the call expected (another mod?): only the IAT hook\n", LANSRV_LOADCALL);
+        return 0;
+    }
+    DWORD old;
+    if (!VirtualProtect(p, 6, PAGE_EXECUTE_READWRITE, &old)) return 0;
+    *(uint32_t *)(p + 2) = (uint32_t)(uintptr_t)&g_srv_loadcell;
+    VirtualProtect(p, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, 6);
+    roam_log("[lan] StartLANServer's load of server.dll (0x%08x) goes through the plugin\n", LANSRV_LOADCALL);
+    return 1;
+}
+/* once a frame: server.dll loaded (the game's handle [0x89011C]) but not patched: say so once per load, and who has the
+ * exe's LoadLibraryA slot now (for the log; the call site above should make this never happen) */
+static void server_dll_watch(void){
+    static HMODULE said;
+    if (!g_real_loadlib) return;                  /* (online off: nothing hooked) */
+    HMODULE h = *(HMODULE volatile *)(uintptr_t)0x0089011cu;
+    if (!h || h == g_srv_patched || h == said) return;
+    said = h;
+    uint32_t f = *(uint32_t volatile *)(uintptr_t)IAT_LOADLIB;
+    MEMORY_BASIC_INFORMATION mi; char who[MAX_PATH]; who[0] = 0;
+    if (VirtualQuery((void *)(uintptr_t)f, &mi, sizeof mi) && mi.AllocationBase) GetModuleFileNameA((HMODULE)mi.AllocationBase, who, sizeof who);
+    roam_log("[lan] server.dll (0x%08x) loaded without the plugin: it is on the REAL network (no one can join); the exe's LoadLibraryA slot is 0x%08x (%s), the plugin's 0x%08x\n",
+             (uint32_t)(uintptr_t)h, f, who[0] ? who : "?", (uint32_t)(uintptr_t)hk_LoadLibraryA);
+}
 static void loadlib_hook(void){
     uint8_t *base = (uint8_t *)(uintptr_t)EXE_BASE;
     IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(base + ((IMAGE_DOS_HEADER *)base)->e_lfanew);
@@ -643,6 +684,7 @@ static void loadlib_hook(void){
             VirtualProtect(&ft->u1.Function, 4, old, &old);
             roam_log("[lan] the exe's LoadLibraryA goes through the plugin: server.dll (the LAN server) will be on the virtual LAN too\n");
             server_dll_patch(GetModuleHandleA("server.dll"), "loaded already");
+            srv_callsite_patch();
             return;
         }
     }
