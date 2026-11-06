@@ -335,6 +335,22 @@ work. Still untested: the laptop winning (Partner on the desktop's side), drag a
 The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then "out of range" about every 65 s) are
 the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
 
+**Plan: friends over the internet (2026-11-07, not started; the player's server on the desktop).**
+- The way in: a VPN, not the router (a forwarded port would put the plain-ws server on the open internet, with no
+  encryption). Tailscale: the desktop and each friend install it; the desktop's machine is shared with each friend's
+  account (Tailscale's "Share", which gives them that one machine, not the home network); the desktop has a
+  100.x.y.z address that every friend reaches.
+- The server: `NFSU2_HOST=192.168.0.109,100.x.y.z` (a comma list: options.rs `--host`, HostCheck answers for each),
+  restarted with it. Windows (as administrator): a port proxy 100.x.y.z:8691 -> 127.0.0.1:8691 beside the LAN one,
+  and a firewall rule for inbound TCP 8691 from 100.64.0.0/10 (the "NFSU2 server (LAN)" rule is LocalSubnet only).
+- Each friend: SPEED2.EXE v1.2 NA, the ASI loader, the same mods and car data as the desktop (NFSU2Unlimiter with its
+  UnlimiterData, NFSU2_StanceMod, the add-on cars' files: without them the car dealer crashes, as the laptop's did),
+  scripts\NFSU2FreeRoam.asi, and an .ini with `Server = ws://100.x.y.z:8691/lan`, `Online = 1`, a Name of their own,
+  the group's `Room` (only they see each other) and `Crew` (a crew-mate's win counts as a Partner's does, for the whole
+  group), `JoinKey = J`, `ToHost = 1`.
+- Limits: a race lobby takes 6 players (drag races 4), free roam 33; the server's per-address limits are per friend.
+  A friend whose Tailscale link is relayed (no direct path) gets more lag.
+
 **To do, the player's list (2026-11-07), in this order:**
 1. **After a multiplayer win (IMPORTANT, the player's priority): built, not tried in the game yet.** The native
    mpcredit (win/roam_asi/mprace_win.c) now does runtime/mpcredit.c's steps 5 and 6: in the crib after the win, the
