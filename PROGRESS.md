@@ -336,9 +336,15 @@ The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then
 the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
 
 **To do, the player's list (2026-11-07), in this order:**
-1. **After a multiplayer win (IMPORTANT, the player's priority):** the sponsor offers and the race's movie the
-   career gives after a win. The native mpcredit (win/roam_asi/mprace_win.c) puts the win in the career but skips
-   both (the browser's runtime/mpcredit.c has them); the game offers sponsors only after the next race.
+1. **After a multiplayer win (IMPORTANT, the player's priority): built, not tried in the game yet.** The native
+   mpcredit (win/roam_asi/mprace_win.c) now does runtime/mpcredit.c's steps 5 and 6: in the crib after the win, the
+   sponsors the post-race list would offer (0x4A4610's test) asked one by one with the game's generic dialog and its
+   own Yes / No labels ("Sponsor offer 1 of 3: <name>. Signing bonus X, its races pay Y. Sign with them?  Yes: sign.
+   No: the next offer."; Yes signs, Career 0x532CF0), the answers to the crib's handler (UI_CareerCrib vtable 0x797550
+   entry 0, 0x4AF3A0, through the plugin); then the race's movie (Scene07 + UpperClass into stage 2, the race table's
+   scenes, Scene15 at the end) between Return to Explore Mode's save and the world. The trip waits meanwhile
+   (mpcredit_busy) and the keys are the player's. Movies = 0 in the .ini skips the movie. Log: "[mpcredit] asked:",
+   "signed with", "the race's movie".
 2. Quitting a race mid-way: the other player is not told (no quit datagrams natively); they only see it in the
    game's own results.
 3. The race lobby from a controller: only the keyboard now (J, Enter).
