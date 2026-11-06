@@ -45,6 +45,14 @@ int  vsnprintf(char *buf, size_t n, const char *fmt, va_list ap);
 int  snprintf(char *buf, size_t n, const char *fmt, ...);
 typedef struct CPU CPU;                           /* the port's guest CPU: always 0 here */
 void roam_game_frame(CPU *c);                     /* runtime/roam_game.c */
+void roam_game_hud(CPU *c);
+void roam_keys_frame(void);                       /* roam_keys.c */
+int  roam_keys_vk(const char *s);
+void roam_keys_hotkey(int vk, void (*fn)(void), const char *what);
+void roam_keys_report(void);
+void roam_win_server_next(void);                  /* roam_win.c: the server switch */
+void roam_win_server_frame(void);
+int  roam_win_servers(void);
 void roam_game_report(void);
 void roam_win_poll(void);                         /* roam_win.c */
 void roam_plat_fault_unlock(void);
@@ -118,6 +126,9 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_DUMPCAR",     "DumpCar",    ""  },  /* test aid: save the car's record as NFSU2FreeRoam.car (for roambot) */
     { "NFSU2_ROAM_SERVER",      "Server",     ""  },  /* ws://host:port/lan: play on a server's virtual LAN, not the local one */
     { "NFSU2_ROAM_CLAIM",       "Claim",      ""  },  /* the token of a claimed name (the server's page makes it) */
+    { "NFSU2_ROAM_SERVERS",     "Servers",    ""  },  /* name=url[|claim]; ...: the servers the ServerKey goes through */
+    { "NFSU2_ROAM_SERVERKEY",   "ServerKey",  "F8" }, /* the next server of Servers (0: none) */
+    { "NFSU2_ROAM_LABELS",      "Labels",     ""  },  /* names over friends' cars (default 1) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },
@@ -136,7 +147,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_POSELOG",     "PoseLog",    ""  },  /* test aid: a CSV of every pose */
 };
 #define NOPT (int)(sizeof OPTS / sizeof OPTS[0])
-static char g_optval[NOPT][160];
+static char g_optval[NOPT][600];
 static int  g_opt_loaded;
 static void trim(char *s){
     /* a comment after the value: ';' or '#' at the start or after a blank
@@ -289,8 +300,47 @@ __asm__(
     "    movl  %eax, %fs:0\n"
     "    call  _roam_asi_fault\n"
     "    jmp   3b\n");
+/* The HUD step: Player::Update's HUD part (0x600590) ends, after its call of the HUD update (0x4EC5A0), in
+ * "pop edi; pop esi; pop ebx; ret" at 0x6005E0 (where the browser build hooks roam_game_hud too): those 4 bytes and
+ * the nop after them are a jmp to roam_hud_thunk, which runs the step (the line at the top of free roam's HUD, the
+ * names over friends' cars) and does the 4 instructions itself.  Its own way back from a fault, as the frame's. */
+#define HUD_SITE      0x006005E0u
+uint32_t g_roam_hud_esp, g_roam_hud_ebp, g_roam_hud_seh;
+void roam_hud_thunk(void);
+void roam_hud_resume(void);
+void roam_asi_hud(void);
+__asm__(
+    ".text\n"
+    ".globl _roam_hud_thunk\n"
+    "_roam_hud_thunk:\n"
+    "    pushal\n"
+    "    pushfl\n"
+    "    movl  %esp, %ebp\n"
+    "    andl  $-16, %esp\n"
+    "    cld\n"
+    "    movl  %esp, _g_roam_hud_esp\n"
+    "    movl  %ebp, _g_roam_hud_ebp\n"
+    "    movl  %fs:0, %eax\n"
+    "    movl  %eax, _g_roam_hud_seh\n"
+    "    call  _roam_asi_hud\n"
+    "4:  movl  %ebp, %esp\n"
+    "    popfl\n"
+    "    popal\n"
+    "    popl  %edi\n"
+    "    popl  %esi\n"
+    "    popl  %ebx\n"
+    "    ret\n"
+    ".globl _roam_hud_resume\n"
+    "_roam_hud_resume:\n"
+    "    movl  _g_roam_hud_esp, %esp\n"
+    "    movl  _g_roam_hud_ebp, %ebp\n"
+    "    movl  _g_roam_hud_seh, %eax\n"
+    "    movl  %eax, %fs:0\n"
+    "    call  _roam_asi_fault\n"
+    "    jmp   4b\n");
 
-static volatile LONG g_guard;                     /* inside the frame step */
+static volatile LONG g_guard;                     /* inside the frame step (or the HUD step: g_guard_hud) */
+static int    g_guard_hud;
 static DWORD  g_guard_tid;
 static DWORD  g_fault_code; static uint32_t g_fault_eip, g_fault_addr; static int g_fault_rw;
 static LONG CALLBACK roam_veh(EXCEPTION_POINTERS *ep){
@@ -307,7 +357,7 @@ static LONG CALLBACK roam_veh(EXCEPTION_POINTERS *ep){
     g_fault_code = code; g_fault_eip = eip;
     g_fault_addr = ep->ExceptionRecord->NumberParameters >= 2 ? (uint32_t)ep->ExceptionRecord->ExceptionInformation[1] : 0;
     g_fault_rw = ep->ExceptionRecord->NumberParameters >= 1 ? (int)ep->ExceptionRecord->ExceptionInformation[0] : -1;
-    ep->ContextRecord->Eip = (DWORD)(uintptr_t)roam_fault_resume;
+    ep->ContextRecord->Eip = (DWORD)(uintptr_t)(g_guard_hud ? roam_hud_resume : roam_fault_resume);
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 /* back from a fault: the game's FPU state, the plugin off for good */
@@ -355,8 +405,23 @@ void roam_asi_frame(void){
     if (g_test_fault < 0 && g_frame == -g_test_fault) *(volatile uint32_t *)(uintptr_t)g_test_fault_ptr = 1u;
     if (g_test_fault_seh > 0 && g_frame == g_test_fault_seh){ uint32_t a = 0; roam_win_call(0x005EBA30u, g_test_fault_ptr, 0, 1, &a); }
     roam_win_poll();                              /* NetThread = 0, or no thread: receive here */
+    roam_keys_frame();                            /* the hotkeys; the game's keyboard hooked (roam_keys.c) */
     roam_game_frame(0);
+    roam_win_server_frame();
     g_guard = 0;
+    __asm__ volatile ("ldmxcsr %0" :: "m"(g_game_mxcsr));
+}
+
+/* the HUD step (roam_hud_thunk), on the game's thread, once a frame while a HUD updates */
+static int g_hud_on;
+void roam_asi_hud(void){
+    if (g_dead || !g_ready || !g_hud_on) return;
+    __asm__ volatile ("stmxcsr %0" : "=m"(g_game_mxcsr));
+    __asm__ volatile ("fnstcw %0" : "=m"(g_game_fcw));
+    __asm__ volatile ("ldmxcsr %0" :: "m"(g_our_mxcsr));
+    g_guard_tid = GetCurrentThreadId(); g_guard_hud = 1; g_guard = 1;
+    roam_game_hud(0);
+    g_guard = 0; g_guard_hud = 0;
     __asm__ volatile ("ldmxcsr %0" :: "m"(g_game_mxcsr));
 }
 
@@ -455,6 +520,26 @@ static int hook_install(void){
     return 1;
 }
 
+static int hud_install(void){
+    uint8_t *site = (uint8_t *)(uintptr_t)HUD_SITE;
+    static const uint8_t want[5] = { 0x5F, 0x5E, 0x5B, 0xC3, 0x90 };
+    if (!readable(HUD_SITE, 5)) return 0;
+    if (memcmp(site, want, 5)){
+        roam_log("[roam] the HUD hook site 0x%08x is %02x %02x %02x %02x %02x, not the game's: another mod changed it? "
+                 "No line at the top of the HUD and no names over cars\n", HUD_SITE, site[0], site[1], site[2], site[3], site[4]);
+        return 0;
+    }
+    DWORD old;
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return 0;
+    int32_t rel = (int32_t)((uint32_t)(uintptr_t)roam_hud_thunk - (HUD_SITE + 5u));
+    uint8_t code[5] = { 0xE9 }; memcpy(code + 1, &rel, 4);
+    memcpy(site, code, 5);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    roam_log("[roam] HUD hook: 0x%08x now jumps to the plugin (0x%08x)\n", HUD_SITE, (uint32_t)(uintptr_t)roam_hud_thunk);
+    return 1;
+}
+
 /* ---- the game's network on the server's virtual LAN (Server = in the .ini) ---------------------------- */
 /* SPEED2.EXE's imports of ws2_32 (by ordinal, WSAIoctl by name) and netapi32!Netbios now point at the plugin's
  * virtual Winsock (win/online/vsock_ws2.c): its Online menu talks to the server's stand-in for EA at 10.77.0.1, its LAN
@@ -526,6 +611,15 @@ static void init_once(void){
     if (!AddVectoredExceptionHandler(1, roam_veh)) roam_log("[roam] no fault guard (AddVectoredExceptionHandler failed)\n");
     online_setup();                                 /* before the game's first Winsock call (its LAN or Online menu) */
     if (!hook_install()) return;
+    g_hud_on = hud_install();
+    {
+        const char *k = roam_opt("NFSU2_ROAM_SERVERKEY");
+        int vk = roam_keys_vk(k);
+        if (roam_opt("NFSU2_ROAM_SERVER") && roam_win_servers() > 0){
+            if (vk) roam_keys_hotkey(vk, roam_win_server_next, "ServerKey: the next server");
+            roam_log("[roam] server switch: %s goes to the next of the %d server(s) in Servers\n", vk ? k : "no key (ServerKey)", roam_win_servers());
+        }
+    }
     g_ready = 1;
     roam_log("[roam] ready: the network starts with the game's first frame\n");
 }
@@ -550,6 +644,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID reserved){
         if (reserved) roam_win_exiting = 1;
         if (g_ready && !g_dead){ g_dead = 1; if (roam_plat_quiesced()) roam_game_report(); }
         vs_exit_report();                          /* the game's Winsock calls since the last report (no lock) */
+        roam_keys_report();
         if (g_x87_popped) roam_log("[roam] %u float result(s) of game functions popped off the x87 stack\n", g_x87_popped);
         roam_log("[roam] unloaded%s\n", reserved ? " (game exit)" : "");
         if (g_log != INVALID_HANDLE_VALUE){ CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }

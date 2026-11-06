@@ -21,3 +21,9 @@ $CC -std=gnu11 -O2 -msse2 -mfpmath=sse -ffp-contract=off -Wall -Wno-unused-funct
 $CC -std=gnu11 -O2 -msse2 -mfpmath=sse -Wall -Wextra -Iwin/online -Iruntime -c -o "$O/obj/roambot.o" win/online/roambot.c
 $CC -o "$O/roambot.exe" "$O/obj/roambot.o" "$O/obj/rb_core.o" "$O/obj/switch.o" -lwinhttp -lm
 ls -la "$O/switch_probe.exe" "$O/vsprobe.exe" "$O/roambot.exe"
+# swaptest: the plugin's server switch (win/roam_asi/roam_win.c) on the plugin's own switch, core and vsock objects
+$CC -std=gnu11 -O2 -msse2 -mfpmath=sse -mstackrealign -ffp-contract=off -fno-strict-aliasing -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0602 \
+    -Iwin/online -Iwin/roam_asi -Iruntime -c -o "$O/obj/st_roamwin.o" win/roam_asi/roam_win.c
+$CC -std=gnu11 -O2 -msse2 -mfpmath=sse -Wall -Wextra -Iwin/online -Iruntime -c -o "$O/obj/swaptest.o" win/online/swaptest.c
+$CC -o "$O/swaptest.exe" "$O/obj/swaptest.o" "$O/obj/st_roamwin.o" "$O/obj/rb_core.o" "$O/obj/switch.o" "$O/obj/vsock.o" "$O/obj/vsock_ws2.o" -lwinhttp -lws2_32 -lm
+ls -la "$O/swaptest.exe"

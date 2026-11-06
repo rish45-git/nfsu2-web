@@ -58,6 +58,8 @@ static int              g_online;
 static volatile LONG    g_vip, g_mask;     /* our virtual address and netmask, from the welcome */
 static int64_t          g_sw_start_at;     /* the switch starts when the player's name is known (or after 45 s) */
 static char             g_server[200];
+static char             g_claim[100];      /* the claim token for g_server, once the server switch chose one (g_claim_set) */
+static int              g_claim_set;
 static volatile LONG    g_sw_busy;         /* online_start_switch running (free roam's thread or a game thread) */
 /* the game's Online menu (and LAN screens) on the switch: win/online/vsock.c (vs_transport below) */
 static int              g_vs_on;
@@ -301,7 +303,7 @@ static void online_start_switch_(int force){
     int64_t now = roam_plat_now_us();
     if (!g_sw_start_at) g_sw_start_at = now + 45000000;
     if (!force && !named && now < g_sw_start_at) return;   /* the profile's name comes with the first frames */
-    sw_options o = { g_server, name, roam_opt("NFSU2_ROAM_CLAIM"), (int)g_lan_on, 10000 };
+    sw_options o = { g_server, name, g_claim_set ? (g_claim[0] ? g_claim : 0) : roam_opt("NFSU2_ROAM_CLAIM"), (int)g_lan_on, 10000 };
     sw_callbacks cb = { sw_welcome, sw_frame, sw_peers, sw_queue, sw_removed, 0, 0, sw_log, 0, sw_down };
     sw *n = sw_start(&o, &cb);
     if (n && g_lan_on) sw_set_lan(n, 1, (uint32_t)g_lan_udp);   /* its UDP ports in the first hello too */
@@ -319,11 +321,21 @@ static void online_start_switch_f(int force){
 static void online_start_switch(void){ online_start_switch_f(0); }
 
 /* ---- the game's Winsock on the switch (vsock.h): its transport ------------------------------------- */
-static int vt_send(void *u, const uint8_t *f, int len){ (void)u; sw *w = g_sw; return w && sw_send_frame(w, f, len); }
+/* (g_sw_users: the vsock writer thread is using the switch; the server switch below waits for it before it stops one) */
+static volatile LONG g_sw_users;
+static int vt_send(void *u, const uint8_t *f, int len){
+    (void)u;
+    InterlockedIncrement(&g_sw_users);
+    sw *w = g_sw; int r = w && sw_send_frame(w, f, len);
+    InterlockedDecrement(&g_sw_users);
+    return r;
+}
 static void vt_lan(void *u, int on, uint32_t udp){
     (void)u;
     InterlockedExchange(&g_lan_on, on); InterlockedExchange(&g_lan_udp, (LONG)udp);
+    InterlockedIncrement(&g_sw_users);
     sw *w = g_sw; if (w) sw_set_lan(w, on, udp);
+    InterlockedDecrement(&g_sw_users);
 }
 static void vt_want(void *u){ (void)u; online_start_switch_f(1); }
 static void vt_log(void *u, const char *line){ (void)u; roam_log("[lan] %s\n", line); }
@@ -473,4 +485,106 @@ int roam_plat_parse_peers(const char *list, int test_mode, uint16_t defport, uin
         ip[n] = v; port[n] = (uint16_t)pt; n++;
     }
     return n;
+}
+
+/* ---- the server switch: another server at run time (ServerKey, F8 by default) ----------------------------------
+ * Servers = name=url[|claim token], name=url ... in the .ini (',' or ';' between them): the key goes on to the next one (after the last, the
+ * first), from the server in use (Server =, or the last one switched to).  Only between servers (the plugin started
+ * with Server =), only in career free roam with no race lobby or race trip (roam_game_switch_block) and no network
+ * session of the game's own open (vs_session_active: its LAN or Online menus): a swap drops every virtual connection.
+ * On its own thread (sw_stop waits for the switch's threads): the old switch stopped (its "down" tells vsock, whose
+ * remote connections end), the new one started without a resume token (a token is one server's), with the entry's
+ * claim token (none: none); free roam's session drops its old peers by their silence and its HELLO reaches the new
+ * server's hub.  The choice is not written to the .ini. */
+void roam_game_note(const char *t, int ms);          /* runtime/roam_game.c: the line at the top of free roam's HUD */
+const char *roam_game_switch_block(void);
+#define SERVERS_MAX 8
+typedef struct { char name[24], url[200], claim[100]; } server_entry;
+static server_entry g_srv[SERVERS_MAX];
+static int          g_nsrv = -1;
+static volatile LONG g_swapping;
+static int64_t      g_swap_at;                   /* when the last swap began (its welcome is reported) */
+static char         g_swap_name[24];
+static int scmp(const char *a, const char *b){ return lstrcmpiA(a, b); }
+static void servers_parse(void){
+    g_nsrv = 0;
+    const char *s = roam_opt("NFSU2_ROAM_SERVERS");
+    while (s && *s && g_nsrv < SERVERS_MAX){
+        while (*s == ' ' || *s == ';' || *s == ',' || *s == '\t') s++;
+        if (!*s) break;
+        server_entry *e = &g_srv[g_nsrv]; memset(e, 0, sizeof *e);
+        char tok[340]; int k = 0;
+        while (*s && *s != ';' && *s != ',' && k < (int)sizeof tok - 1) tok[k++] = *s++;
+        while (k && (tok[k - 1] == ' ' || tok[k - 1] == '\t')) k--;
+        tok[k] = 0;
+        const char *t = tok, *eq = 0, *bar = 0;
+        for (const char *p = tok; *p; p++){ if (*p == '=' && !eq) eq = p; if (*p == '|' && !bar) bar = p; }
+        if (eq && (!bar || eq < bar) && eq - t > 0 && eq - t < (int)sizeof e->name){
+            for (int i = 0; i < eq - t; i++) e->name[i] = t[i];
+            t = eq + 1;
+        }
+        int i = 0;
+        for (; *t && t != bar && i < (int)sizeof e->url - 1; t++) if (*t != ' ') e->url[i++] = *t;
+        e->url[i] = 0;
+        if (bar){ i = 0; for (t = bar + 1; *t && i < (int)sizeof e->claim - 1; t++) if (*t != ' ') e->claim[i++] = *t; e->claim[i] = 0; }
+        int ws = (e->url[0] == 'w' && e->url[1] == 's' && e->url[2] == ':') || (e->url[0] == 'w' && e->url[1] == 's' && e->url[2] == 's' && e->url[3] == ':');
+        if (!ws){ roam_log("[roam] Servers: \"%s\" ignored: write name=ws://host:port/lan or name=wss://host/lan\n", tok); continue; }
+        if (!e->name[0]) snprintf(e->name, sizeof e->name, "server %d", g_nsrv + 1);
+        roam_log("[roam] Servers: %d \"%s\" %s%s\n", g_nsrv + 1, e->name, e->url, e->claim[0] ? " (with a claim token)" : "");
+        g_nsrv++;
+    }
+}
+int roam_win_servers(void){ if (g_nsrv < 0) servers_parse(); return g_nsrv; }
+static DWORD WINAPI swap_main(LPVOID p){
+    server_entry *e = (server_entry *)p;
+    uint32_t mx = roam_win_mxcsr_default(); __asm__ volatile ("ldmxcsr %0" :: "m"(mx));
+    sw *old;
+    roam_plat_lock(); old = g_sw; g_sw = 0; roam_plat_unlock();        /* free roam's sends stop here (do_send_online) */
+    for (int i = 0; i < 2000 && g_sw_users; i++) Sleep(1);             /* vsock's writer is done with it */
+    InterlockedExchange(&g_vip, 0);
+    if (old) sw_stop(old);                                             /* (its reader's "down" tells vsock: sw_down) */
+    if (g_s){ roam_plat_lock(); int n = rc_new_server(g_s); roam_plat_unlock(); roam_log("[roam] server switch: %d player(s) of the old server dropped\n", n); }
+    if (g_vs_on) vs_link_down();
+    int i = 0; for (; e->url[i] && i < (int)sizeof g_server - 1; i++) g_server[i] = e->url[i];
+    g_server[i] = 0;
+    i = 0; for (; e->claim[i] && i < (int)sizeof g_claim - 1; i++) g_claim[i] = e->claim[i];
+    g_claim[i] = 0; g_claim_set = 1;
+    roam_log("[roam] server switch: left the old server; joining \"%s\" %s\n", e->name, g_server);
+    online_start_switch_(1);
+    if (!g_sw){ char t[120]; snprintf(t, sizeof t, "Server %s: could not start (see the log)", e->name); roam_game_note(t, 6000); }
+    InterlockedExchange(&g_sw_busy, 0);
+    InterlockedExchange(&g_swapping, 0);
+    return 0;
+}
+/* the hotkey (the game's thread, from the frame hook) */
+void roam_win_server_next(void){
+    char t[320];
+    if (roam_win_servers() < 1){ roam_game_note("No other servers: add Servers = name=url, ... to NFSU2FreeRoam.ini", 6000); return; }
+    if (!g_online || !g_server[0]){ roam_game_note("The server switch needs Server = in NFSU2FreeRoam.ini at start", 6000); return; }
+    if (g_swapping){ roam_game_note("Still switching servers", 3000); return; }
+    const char *why = roam_game_switch_block();
+    if (!why && g_vs_on && vs_session_active()) why = "Leave the game's LAN or Online menus first";
+    if (why){ snprintf(t, sizeof t, "%s: the server stays %s", why, g_server); roam_game_note(t, 5000); return; }
+    int cur = -1;
+    for (int i = 0; i < g_nsrv; i++) if (!scmp(g_srv[i].url, g_server)) cur = i;
+    int next = (cur + 1) % g_nsrv;
+    if (cur == next){ snprintf(t, sizeof t, "Only one server in Servers =: still on %s", g_srv[cur].name); roam_game_note(t, 5000); return; }
+    if (InterlockedCompareExchange(&g_sw_busy, 1, 0) != 0){ roam_game_note("Still joining the server: try again", 3000); return; }
+    InterlockedExchange(&g_swapping, 1);
+    g_swap_at = roam_plat_now_us();
+    snprintf(g_swap_name, sizeof g_swap_name, "%s", g_srv[next].name);
+    snprintf(t, sizeof t, "Server: %s (%s): connecting", g_srv[next].name, g_srv[next].url);
+    roam_game_note(t, 15000);
+    HANDLE h = CreateThread(0, 64 * 1024, swap_main, &g_srv[next], 0, 0);
+    if (!h){ InterlockedExchange(&g_sw_busy, 0); InterlockedExchange(&g_swapping, 0); roam_game_note("The server switch could not start a thread", 5000); return; }
+    CloseHandle(h);
+}
+/* each frame: the new server's welcome, said on the top line */
+void roam_win_server_frame(void){
+    if (!g_swap_at || g_swapping) return;
+    uint32_t vip = (uint32_t)g_vip;
+    int64_t now = roam_plat_now_us();
+    char t[120], b[16];
+    if (vip){ snprintf(t, sizeof t, "Server: %s: connected as %s", g_swap_name, roam_ip_str(vip, b)); roam_game_note(t, 6000); g_swap_at = 0; }
+    else if (now - g_swap_at > 15000000){ snprintf(t, sizeof t, "Server: %s: no answer yet (still trying; the key again for the next)", g_swap_name); roam_game_note(t, 8000); g_swap_at = 0; }
 }

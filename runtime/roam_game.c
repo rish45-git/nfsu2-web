@@ -5384,6 +5384,24 @@ static void gh_frame(void){
 }
 
 /* the line of text, top centre, after the HUD's update (roam_game_hud) */
+#ifdef ROAM_HOST_WIN
+/* a note of the plugin's own on that line (roam_game_note: the server switch's, win/roam_asi/roam_win.c), set from any
+ * thread: under the session lock */
+static char    g_hnote[TAG_DUEL_MAX];
+static int64_t g_hnote_until;
+void roam_game_note(const char *t, int ms){
+    roam_plat_lock();
+    snprintf(g_hnote, sizeof g_hnote, "%s", t ? t : "");
+    g_hnote_until = roam_plat_now_us() + (int64_t)(ms > 0 ? ms : 5000) * 1000;
+    roam_plat_unlock();
+    rlog("[roam] f=%ld note: %s\n", rh_frame(), t ? t : "");
+}
+static void hnote_line(int64_t host, char *tx, int n){
+    roam_plat_lock();
+    if (!tx[0] && g_hnote[0] && host < g_hnote_until) snprintf(tx, (size_t)n, "%s", g_hnote);
+    roam_plat_unlock();
+}
+#endif
 #if MPRACES
 static int mp_line(int64_t host, char *tx, int n);
 static int64_t g_mp_hud_at;                   /* free roam's HUD was up, no dialog over it (the lobby's panel shows) */
@@ -5411,6 +5429,9 @@ static void du_hud(CPU *c, int64_t host){
         else if (g_du.st == DU_ACCEPTED) snprintf(tx, sizeof tx, g_du.drift ? "Drift battle with %s" : "Outrun with %s", g_du.name);
         else if (g_du.drift && (g_du.st == DU_RACE || g_du.st == DU_OVER)) db_line(host, tx, sizeof tx);
         if (!tx[0] && g_du.note[0] && host < g_du.note_until && g_du.st != DU_RACE && g_du.st != DU_OVER) snprintf(tx, sizeof tx, "%s", g_du.note);
+#ifdef ROAM_HOST_WIN
+        hnote_line(host, tx, (int)sizeof tx);
+#endif
     }
     if (!tx[0]){ tag_hide(c, TAG_DUEL); return; }
     uint32_t obj = tag_obj(c, TAG_DUEL, pkg);
@@ -9726,12 +9747,28 @@ void roam_game_hud(CPU *c){
     if (c->esi && c->esi == coop_player()){ tags_update_for(c, 1); g_cost_hud += rh_ns() - t0; return; }
 #endif
     tags_update(c);
+#ifdef ROAM_HOST_WIN
+    du_hud(c, roam_plat_now_us());               /* (no outruns here: the line has the lobby's text and the plugin's notes) */
+#else
     if (DUELS) du_hud(c, roam_plat_now_us());
+#endif
 #if MPRACES
     mp_labels(c);
 #endif
     g_cost_hud += rh_ns() - t0;
 }
+#ifdef ROAM_HOST_WIN
+/* why the plugin's server switch (roam_win.c) may not run now, or 0: only in career free roam proper, with nothing of
+ * the races between players under way (a swap drops every connection on the virtual LAN) */
+const char *roam_game_switch_block(void){
+    if (!O.on || !g_in_roam) return "Switch servers in free roam";
+#if MPRACES
+    if (g_mp.st != MP_IDLE) return "Leave the race lobby first";
+    if (mprace_phase() != MPR_IDLE && mprace_phase() != MPR_DONE && mprace_phase() != MPR_FAILED) return "Not during a race";
+#endif
+    return 0;
+}
+#endif
 
 /* splitscreen.c: an object the names put where they are (its FE data): the co-op HUD mapping leaves it there */
 int roam_game_placed(uint32_t data){

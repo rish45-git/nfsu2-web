@@ -52,6 +52,7 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat and a clean quit confirmed; races with a second player: phase 4 |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | **a race between two native PCs works** (see below); a browser player, 3+ players and drift not yet |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
+| 6 | free-roam race lobbies (roam_game.c `mp_*` + mprace.c) in the plugin, for two players (host + one friend) on our own server; a runtime server switch | **plan** (below, scope narrowed 2026-11-06), no code yet |
 
 ## Environment (this PC)
 
@@ -121,6 +122,125 @@ stance): drive stock cars online, or disable them in the test copy.
 4. Smaller open items: fix `tools/roam_fingerprint.py` (read the names from the preprocessor); test the switch
    client's queue (`--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://` and a claimed name; the peer bitmap
    (a connect to an absent virtual address: WSAETIMEDOUT after 3 s instead of WSAEHOSTUNREACH).
+
+## Phase 6: free-roam race lobbies in the plugin (plan, 2026-11-06)
+
+**How the browser does it (read for this plan).** Two halves, both shared C:
+- *The lobby*, `runtime/roam_game.c` `mp_*` (behind `MPRACES`, 0 when `ROAM_HOST_WIN`): race spots from the career's
+  event triggers (`g_spot`); the race card's Accept asks Solo / Multiplayer (`mp_card`, a patch of the card's handler
+  0x499C00, the game's own two-button dialog). The host's lobby sends `RC_MSG_LOBBY` ADVERT every second to its peers
+  and to the hub (world map, `LOBBIES`); JOIN / LEAVE to the host, START / CLOSE from it. Several lobbies can sit on one
+  spot (the card pages through them: next E, new B, who-can-join V). Players join within 15 m and stay within 40 m;
+  the hub links up to 24 players within 20 m of a start to its host first. Enter with 2+ in it: 2 s countdown, START
+  names who races, and every game starts its trip. The protocol (`roam_core.c`) is already in the plugin; only the
+  game side is off.
+- *The trip*, `runtime/mprace.c`: each game drives itself through screens a player could use: pause, Quit, Main, LAN;
+  the host starts **server.dll** early (StartLANServer 0x5FA300) while the lobby counts down, creates a passworded game
+  on the race's track; joiners connect straight to the host's vip:9900, find the game by its host's LAN name, gjoi,
+  Ready; the host starts once all are ready (30 s at most). Then the results, LAN exit, Resume Career, the crib (the
+  prize into the bank), Return to Explore Mode: back at the spot. Also: engine-power balancing (logf/expf/powf, the
+  same numbers in every game), the career credit for a win (`mpcredit.c`), URL heats, the quit fee and "N2QT" quit
+  datagrams on a UDP port (`racehorn.c`, `vlan_rt_send`).
+- *Invites today*: only from the page (`/friends` text messages on `/lan`, `friends.rs`), only between claimed-name
+  friends both ways; the host takes a JOIN from afar only from a friend or crew-mate (`mp_recv` RC_LOBBY_JOIN).
+
+**Scope (narrowed 2026-11-06):** two players, the player hosting and one friend joining, on our own server
+(`NFSU2_HOST=192.168.0.109`), free roam and career races together. No open-invite broadcast, no multi-lobby UI, no
+hub changes, no live server. Nothing of phases 1-4 changes. (The game's own limit, 6 cars a race, is untouched: the
+shared code still takes more, we just do not build or test for it.)
+
+**What the plugin lacks for it.**
+1. **server.dll on the virtual LAN** (the host's half; PROGRESS "Next" 2): the game LoadLibrary's it; its own ws2_32
+   imports (plus getsockopt, htons/htonl/ntohs/ntohl) must go to vsock too. Hook the exe's LoadLibraryA/FreeLibrary
+   imports, patch server.dll's IAT on load. Its LAN broadcast (the "server found" message) on vsock's broadcast path.
+2. **mprace.c's host layer**: it is written against the emulator (`call`/`dispatch_indirect`, `dispatch_patch` of
+   two game handlers: the pause menu 0x4C2170 and the race card 0x499C00, `autotest_top_fng`/`career_fe_active`,
+   `autotest_tap` for about a dozen Enter/Esc/Left presses, `mem_is_committed`, stdio, getenv, clock_gettime, libm).
+   A `mprace_host_win.h` as `roam_host_win.h` is for roam_game.c: calls through `roam_win_call`, the FE manager's
+   screen list (0x8637B4) for the top screen, native detours (jmp + trampoline) for the two handlers, a DirectInput8
+   keyboard hook (GetDeviceState) for the taps and for muting the player's input during the trip (`mprace_owns_input`).
+3. **Deterministic libm**: the balance must give every game of a race the same factor, browser or native. Port the
+   browser build's own logf/expf/powf (same algorithm, bit for bit) into roam_libc.c; a test vector checks both.
+4. `mpcredit.c` (career credit), the parts of `racenet.c` the trip reads (`racenet_jump`, race peers), N2QT over vsock.
+5. **UI without a page**: `roam_plat_lobby` returns 0, so `mp_line` puts the lobby on free roam's top line (already
+   written for that case); the card and dialogs are the game's own; `roam_plat_lobby_act` from plugin hotkeys
+   (next / new / who-can-join / leave / join an invite). Labels over spots and map icons after the trip works.
+
+**Two-player invite and join (no protocol or hub change; the browser's behaviour stays as it is).**
+- *Who is "us"*: both games set the same private `Room =` in the .ini. The hub links and lists players of the same room
+  only, so the room is the pair: no friends list, claimed name or Turnstile needed (the friends system lives on the
+  page's `/friends` messages, which the plugin has no page for). With two players in a room the hub should link them
+  wherever they are (it chooses by distance once a room has more players than links); not checked yet: step 4 checks
+  that an ADVERT reaches the friend 2 km away.
+- *Drive up* (exists): the host opens a lobby with the race card's Multiplayer; the friend drives to the marker (15 m)
+  and Enter joins; the host's Enter starts it.
+- *Invite from afar* (small): the host's ADVERTs already reach the friend directly (they are linked). The friend's top
+  line says "rishi hosts a sprint at the marker: press J to join"; J is `mp_far_join` (exists). The host takes a JOIN
+  from afar today only from a friend or crew-mate (`mp_recv` RC_LOBBY_JOIN): in the plugin (`ROAM_HOST_WIN`, option
+  `FarJoin = 1`) it also takes one from anyone in its room. The trip leaves from where the friend is and brings it back
+  there (as now).
+- *Career credit* ("co-op" as far as the game allows): each player drives its own career in its own game; a race counts
+  in a career when `mp_counts` says so in that game (a race of the player's stage, open, not won yet). A win by the
+  other player counts for us only when the hub marks us friends (`MpRace.friends`), which needs the page.
+- *Partner (decided 2026-11-06: yes)*: plugin option `Partner = <name>`, the name over the other player's car (its
+  profile name, or its `Name =`). In `roam_game.c` `mp_friend(id)`, under `ROAM_HOST_WIN` only: a peer whose name is the
+  Partner (case-insensitive) is a friend, as the existing `NFSU2_MPRACE_TEST_FRIENDS` test list makes one. From there
+  the existing code does the rest:
+  - `mp_trip_names` puts it in `friend_mask`, and `mp_trip` passes its LAN name in `MpRace.friends`;
+  - mprace.c `credit_decide`: when the winner is a friend and we finished, `MPC_FRIEND`, and `mpcredit_win` gives our
+    career the game's own win of that race (with the winner's margin), if the race counts in *our* career (`t.credit`,
+    our game's `mp_counts`). Otherwise only the place's prize money, as now;
+  - it is also a "mate" for the lobby: a JOIN from afar taken, our stage limit waived for it, and it gets into a
+    "Friends & crew only" lobby.
+  - Each side sets the other's name (desktop `Partner = rishilaptop`, laptop `Partner = rishi`); one side alone only
+    credits that side. A name is no proof of who drives (anyone can play under any unclaimed name), which is why it
+    goes with a private `Room`: only the two of us are there. Log: `[roam] Partner "<name>" ... a friend for race
+    credit`, and mprace's existing "our friend won it: it counts" line.
+- Not built: open invites, the card's paging between lobbies, more than one lobby at a spot (the shared code keeps
+  doing what it does; we only test with two).
+
+**Server switch at runtime (new, plugin only).** Ready for the live server later, not connected to it now.
+- .ini: `Server =` stays the server at start. New `Servers = local=ws://192.168.0.109:8691/lan` (a list of
+  `name=url`, `;`-separated, each optionally `|claim token`, since a claim token is one server's). The shipped .ini has
+  the local entry and a commented-out example only: nothing reaches nfsu2.xyz unless the player adds it.
+- Hotkey `ServerKey = F8` (default): the next entry. Only in free roam proper: refused (top line says why) in a race,
+  the LAN or Online menus, a race trip or a lobby, or while a Winsock session of the game is open (`vs_session_active`),
+  since a swap drops every virtual connection.
+- On a worker thread (sw_stop waits up to 2 s): `sw_stop` the old switch; `sw_start` the new one with no resume token
+  (a token is one server's); vsock gets link down, then link up with the new vip (which already resets every remote
+  connection); free roam's session drops its peers and says HELLO to the new hub. The top line: "Server: live
+  (wss://nfsu2.xyz/lan): connecting", then "... connected as 10.77.x.y" or the switch's own error (refused, HTTP 403,
+  banned ...); F8 again goes on to the next entry (back to local).
+- Only between servers: the plugin must start with `Server =` set (a switch from LAN UDP to a server is not in scope).
+  The choice is not written back to the .ini (the next start is on `Server =` again).
+- Input: the game's DirectInput keyboard (a vtable hook of its device's GetDeviceState: no new import for
+  `asi_check.py`, and keys only while the game has focus). The same hook does mprace's key presses and input muting.
+
+**Done so far (2026-11-06, while the player slept: built and checked here; nothing of it tried in the game yet):**
+- Step 1 (commit "Phase 6 step 1"): `win/roam_asi/roam_keys.c` (hotkeys by GetAsyncKeyState while the game is in
+  front, user32 looked up with GetProcAddress, the one new import, allowed in `asi_check.py`; the game's keyboard
+  [0x86E5C0] hooked: GetDeviceData / SetActionMap vtable slots, taps through its action map, the player's events held
+  back while muted, our events still delivered while the device is lost); a HUD hook at 0x6005E0 (the browser's site:
+  `pop edi/esi/ebx; ret` + nop replaced by a jmp, its own fault way back), which now runs `roam_game_hud` natively:
+  the line at the top of the HUD **and the names over other players' cars** (`Labels = 0` turns those off); the server
+  switch (`Servers =`, `ServerKey = F8`, `roam_win.c`), `rc_new_server` in the core (the old server's peers dropped, a
+  HELLO to the new hub), `roam_game_note` / `roam_game_switch_block` in roam_game.c (Windows only).
+  `out/win/swaptest.exe` (`win/online/swaptest.c`, built by `build_probe.sh`: the plugin's own roam_win.c, switch and
+  core, with stand-ins for the game) against the local server with a roambot: **all 17 checks pass** (refused while
+  blocked, refused while switching, a new vip on each server, the old server's player dropped, the bot linked again
+  on the new server, back). Not tried: F8 in the game, the HUD line and names over cars in the game, the key taps.
+
+**Steps** (each built and checked before the next):
+1. The DInput keyboard hook and the server switch (independent of the races, and useful to test with): F8 between two
+   local entries (the same server under 127.0.0.1 and 192.168.0.109, so the swap is real), free roam's friend car gone
+   and back, the vip new; refused in the Online lobby.
+2. server.dll hooks; by hand: the desktop hosts from the LAN menu, the laptop finds and joins it, a race.
+3. `mprace_host_win.h`, detours, libm; mprace.c + mpcredit.c built into the plugin (MPRACES on, UI off); `asi_check.py`
+   PASS.
+4. Lobby on: spots, the card, the top line, J. Desktop + laptop in one `Room`: drive-up join, the trip, the results,
+   back at the spot, the prize in the bank (the test copy's profile); then the invite from afar.
+5. `Partner =`: the laptop wins a race open in the desktop's career (both at the same stage) -> the desktop's career
+   has it won (its event entry, the race's marker gone), the laptop's too; and without `Partner` the desktop's has not.
 
 ## Local server (verified 2026-11-06)
 

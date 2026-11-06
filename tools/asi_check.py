@@ -42,7 +42,9 @@ ALLOWED = {
         'CreateEventA', 'SetEvent', 'SetLastError', 'InitializeConditionVariable', 'SleepConditionVariableCS',
         'WakeAllConditionVariable',
         # its diagnostics: which threads call the game's Winsock, at what priority
-        'GetCurrentThread', 'GetThreadPriority'},
+        'GetCurrentThread', 'GetThreadPriority',
+        # the plugin's hotkeys (win/roam_asi/roam_keys.c): user32's key functions, looked up at run time
+        'GetProcAddress'},
     # online play: the WebSocket to the server's switch (Windows 8 or newer; only used with Server = in the .ini)
     'WINHTTP.dll': {
         'WinHttpCloseHandle', 'WinHttpConnect', 'WinHttpOpen', 'WinHttpOpenRequest', 'WinHttpQueryHeaders',

@@ -1320,6 +1320,22 @@ int rc_set_room(rc_session *s, uint32_t room){
     for (int i = 0; i < RC_TABLE; i++) if (s->peer[i].state != RC_PS_FREE) s->peer[i].last_hello_tx = INT64_MIN / 4;
     return n;
 }
+/* another server (the Windows plugin's server switch): as a new room, every player of the old one goes (their
+ * addresses are other players' on the new switch), with the maps' markers and lobbies; a HELLO to the hub at once */
+int rc_new_server(rc_session *s){
+    int n = 0;
+    for (int i = 0; i < RC_TABLE; i++){
+        if (s->peer[i].state == RC_PS_FREE) continue;
+        n += s->peer[i].state == RC_PS_EST;
+        drop_peer(s, i, "another server", RC_DGONE_SAID);
+    }
+    s->map_n = 0; s->map_total = 0; s->map_held = 0; s->map_gen++;
+    s->near_n = 0; s->near_total = 0; s->near_held = 0; s->near_gen++;
+    s->lobbies_n = 0; s->lobbies_gen++;
+    s->noted_room = 0;
+    s->hub_hello_tx = INT64_MIN / 4;
+    return n;
+}
 int rc_peer_crew(const rc_session *s, int i){
     if (i < 0 || i >= RC_TABLE) return -1;
     const rc_peer *p = &s->peer[i];

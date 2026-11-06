@@ -797,6 +797,7 @@ void rc_set_duel(rc_session *s, uint32_t id);
  * hub (or the peers) hears the new one at the next tick.  The number of
  * established peers that went (0 also for the same room: nothing changes) */
 int  rc_set_room(rc_session *s, uint32_t room);
+int  rc_new_server(rc_session *s);          /* another server (the Windows plugin): every peer dropped, a HELLO to the hub */
 /* a DUEL message to the established peer with id `to`, if its HELLO said it
  * takes them (a drift battle's, RC_DA_DRIFT or RC_DUEL_SCORE: RC_HF_DRIFT); 1
  * when sent.  score: RC_DUEL_SCORE's points (the others carry none) */
