@@ -49,8 +49,8 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | 0 | branch, .gitignore, test copy, toolchain, the existing free-roam ASI built and tried, local server | **done** |
 | 1 | switch client in C (WebSocket, hello/welcome, ping, queue, kick), a console probe against the local server | **done** (see below) |
 | 2 | free roam online: a switch transport for the ASI, the hub | **done** against simulated players (see below); not yet with a browser player; the exe-fingerprint generator is still unfixed |
-| 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat, quitting and races with a second player not yet confirmed |
-| 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | |
+| 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat and a clean quit confirmed; races with a second player: phase 4 |
+| 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | **a race between two native PCs works** (see below); a browser player, 3+ players and drift not yet |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
 
 ## Environment (this PC)
@@ -111,14 +111,16 @@ stance): drive stock cars online, or disable them in the test copy.
 
 ## Next
 
-1. **Phase 3**, the game's own Online lobby (works in the game; open: chat, quitting, then a second player: phase 4): redirect the exe's 22 ws2_32
-   imports (by ordinal) and `Netbios` through the switch client; `gethostbyname("pcnfs05.ea.com")` -> 10.77.0.1;
-   the `*pcnfs05.ea.com` string at 0x7FBDBC -> `pcnfs05.ea.com`; TCP as the switch's stream frames (kind 4), UDP as
-   kind 3, ICMP echo as kind 5. `runtime/winsock.c` and `runtime/web/net_lan.c` describe the behaviour exactly.
-2. A test with a real browser player (needs the browser build of the repo, or th0mk's OK to use nfsu2.xyz).
-3. Smaller open items: fix `tools/roam_fingerprint.py` (read the names from the preprocessor); test the switch
-   client's queue (`--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://` and a claimed name; the build script's
-   last line uses macOS `stat -f`.
+1. **Phase 4, more races:** 3 or more players (a third machine, or a browser player), drift and the other race types,
+   a long session, quitting right after a race; read the second machine's log too. A browser player needs the browser
+   build of the repo, or th0mk's OK to use nfsu2.xyz.
+2. **`server.dll`** (step 7 of phase 3): hook its imports when the game loads it, so hosting from the LAN menu works
+   on the virtual LAN (today the Online menu is the way to race while the hooks are on).
+3. **A second PC at home** is set up as in the phase-4 section (port proxy, firewall rule, `NFSU2_HOST`); if the
+   desktop's address changes, all three need the new one (a DHCP reservation avoids it).
+4. Smaller open items: fix `tools/roam_fingerprint.py` (read the names from the preprocessor); test the switch
+   client's queue (`--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://` and a claimed name; the peer bitmap
+   (a connect to an absent virtual address: WSAETIMEDOUT after 3 s instead of WSAEHOSTUNREACH).
 
 ## Local server (verified 2026-11-06)
 
@@ -132,6 +134,27 @@ stance): drive stock cars online, or disable them in the test copy.
 - `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
   p50 latency 27 ms, hub and switch work. The server log shows each join/leave as `[lan] 10.77.x.2 joined`.
 - Startup notes: Online (10.77.0.1) and the free-roam hub (10.77.0.253) are on; `game.wasm` is missing (not needed).
+
+## Phase 4: an Online race between two PCs (passed 2026-11-06, 13:42-13:53)
+
+- **Setup:** the desktop (192.168.0.109, the server in WSL) and a laptop (ASUS Vivobook, its own v1.2 NA install, the
+  ASI loader, `out/win/dist/scripts/*`, `Server = ws://192.168.0.109:8691/lan`, name rishilaptop) on the home network.
+  Server: `NFSU2_HOST=192.168.0.109` (its banner: `names: localhost, 192.168.0.109`); Windows: port proxy
+  192.168.0.109:8691 -> 127.0.0.1:8691, firewall rule "NFSU2 server (LAN)" (inbound TCP 8691, LocalSubnet, Private),
+  Ethernet set to Private (the player did these as administrator). `switch_probe.exe ws://192.168.0.109:8691/lan`:
+  7/7 before the laptop tried. Undo: `netsh interface portproxy delete v4tov4 listenaddress=192.168.0.109
+  listenport=8691; Remove-NetFirewallRule -DisplayName "NFSU2 server (LAN)"`.
+- **Result (the player, photos):** the laptop joined the desktop's room; chat both ways; a race on Palomino & 16th,
+  both in RX-8s: name tags over the other car, live positions (1st/2nd and the gap) on both; both showed the same
+  Event Results (rishilaptop 4:04.65, rishi 4:34.65); both back in the Game Session Lobby with "Players Online: 2".
+  Desktop at 180 fps, laptop at 60 fps: no desync seen.
+- **The desktop plugin's log:** after the room, the game bound UDP 3658; at the end 5585 datagrams out, 10741 in over
+  the switch, 1 "no port" (a stray while the race socket was closed), 0 queue full; TCP 0 resets, 0 refused, 0 timed
+  out, 0 link resets; TX ring never full, 0 offline, 0 for an old link; ICMP 16 out, 17 in, and 1 echo from the laptop
+  answered by the stack (player-to-player pings). After the race the lobby link opened again (20920, 20922). No crash
+  dump.
+- **Not tried yet:** a browser player in the same race (needs the browser build), 3 or more players, drift and the
+  other race types, a long session, a quit right after a race; the laptop's own log was not read.
 
 ## Phase 3: virtual Winsock for the Online lobby (plan, 2026-11-06)
 
@@ -200,8 +223,8 @@ the same set plus getsockopt/htons/htonl/ntohs/ntohl: it is not hooked by patchi
   plugin's log: the game's WSAStartup(2.0) took the switch free roam had already opened (10.77.29.2), then TCP to
   10.77.0.1:20920 (redirector), :20922 (lobby), :13505 (EA Messenger); ICMP 11 out, 11 answered (the dots); in 7 minutes
   0 resets, 0 refused, TX ring never full, nothing dropped; the server counted `"online":1`. Free roam's hub kept
-  answering alongside. Not confirmed yet: lobby chat, quitting the game with the Online session open (the exit path
-  skips every WinHTTP call), a second player joining the room.
+  answering alongside. Then (the player): chat in the room showed up; Back -> Logoff -> Quit from the main menu closed the game
+  cleanly. Not tried yet: a second player joining the room (phase 4).
 - Not built yet: `server.dll` hooks (step 7), the peer bitmap (a connect to an absent vip times out in 3 s with
   WSAETIMEDOUT instead of WSAEHOSTUNREACH), the browser's race statistics and Filter marking.
 
