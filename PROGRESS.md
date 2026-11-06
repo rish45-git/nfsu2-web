@@ -172,6 +172,12 @@ stance): drive stock cars online, or disable them in the test copy.
   every call fails at once (WSANOTINITIALISED, as on Windows), and a DirtySock thread at a high priority that loops on
   select spins instead of waiting, starving the laptop's render thread (the desktop has 32 hardware threads). Next:
   the same logoff and quit on the laptop with the diagnostics below.
+- **Retest on the laptop with the diagnostics (14:26-14:28, lobby only, no race):** logoff (WSACleanup 14:28:20) to
+  exit (14:28:23) in 3 s at about 61 fps (491 frames in 8 s): **not reproduced**. No Winsock call after the last
+  WSACleanup at all (no "no session" report, nothing at exit), so nothing spun this time. Seen: the game reads its
+  lobby links by polling recv (about 200 a second, 0.1 ms each) and never selects them for reading; a second thread
+  at priority 2 (highest) calls recvfrom (the ICMP pings); gethostbyname runs on two threads of its own; WSAStartup
+  and WSACleanup 4 each. The slow quit came after a race: next, a race, then logoff and quit.
 - **Diagnostics in the plugin (2026-11-06, 331,776 bytes, asi_check PASS, in the test copy and `out/win/dist`):**
   - `[lan] calls in N s: <function> <calls> (<n> no session) <ms in it> ms (max <ms>) [<thread id>/<priority> ...]`
     every 60 s while the game calls Winsock, at the last WSACleanup ("up to the last WSACleanup"), at exit, and every
