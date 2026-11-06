@@ -52,7 +52,7 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat and a clean quit confirmed; races with a second player: phase 4 |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | **a race between two native PCs works** (see below); a browser player, 3+ players and drift not yet |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
-| 6 | free-roam race lobbies (roam_game.c `mp_*` + mprace.c) in the plugin, for two players (host + one friend) on our own server; a runtime server switch | **plan** (below, scope narrowed 2026-11-06), no code yet |
+| 6 | free-roam race lobbies (roam_game.c `mp_*` + mprace.c) in the plugin, for two players (host + one friend) on our own server; a runtime server switch | **steps 1-5 built and committed** (below); checked by probes against the local server, **nothing of it tried in the game yet** |
 
 ## Environment (this PC)
 
