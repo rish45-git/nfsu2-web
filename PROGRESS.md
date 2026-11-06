@@ -335,6 +335,17 @@ work. Still untested: the laptop winning (Partner on the desktop's side), drag a
 The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then "out of range" about every 65 s) are
 the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
 
+**To do, the player's list (2026-11-07), in this order:**
+1. **After a multiplayer win (IMPORTANT, the player's priority):** the sponsor offers and the race's movie the
+   career gives after a win. The native mpcredit (win/roam_asi/mprace_win.c) puts the win in the career but skips
+   both (the browser's runtime/mpcredit.c has them); the game offers sponsors only after the next race.
+2. Quitting a race mid-way: the other player is not told (no quit datagrams natively); they only see it in the
+   game's own results.
+3. The race lobby from a controller: only the keyboard now (J, Enter).
+4. The lobby's line at the top: only shown while the HUD is up.
+5. The car doors fix below: installed and tried in the game.
+6. Partner and races not finished (below): the player's choice.
+
 **To do, decided later (2026-11-07):**
 - Partner and races not finished: the friend's win counts only in a race we finished. In the drift race the laptop was
   at 2 of 4 laps when the desktop finished, the game ended its race ("not finished"), so it got nothing. Choice for the
