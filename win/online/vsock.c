@@ -139,6 +139,7 @@ struct VConn {
     /* diagnostics (conn_report): bytes each way, and when the game last polled it for reading, called recv on it,
      * and got data from it; stall_said: "unread for 20 s" logged */
     uint64_t t0, polled_rd, recv_call, read_at;
+    uint64_t wait_at;                       /* when data last came into an empty buffer (stall_check counts from it) */
     uint32_t bytes_in, bytes_out;
     int stall_said;
 };
@@ -284,6 +285,7 @@ static int rb_put(VConn *k, const uint8_t *p, uint32_t n, uint32_t cap){
         uint8_t *nb = vs_realloc(k->rb, nc); if (!nb) return 0;
         k->rb = nb; k->rcap = nc;
     }
+    if (!k->rlen) k->wait_at = now_us();
     memcpy(k->rb + k->roff + k->rlen, p, n); k->rlen += n;
     return 1;
 }
@@ -558,7 +560,10 @@ static void stall_check(void){
     uint64_t now = now_us();
     for (VConn *k = g_conns; k; k = k->next){
         if (k->local || k->state != C_EST || !k->rlen || k->stall_said) continue;
+        /* from the later of: the last read, the data's arrival in an empty buffer (a connection idle for 20 s whose
+         * next message just came is not a stall: live log 2026-11-06, the LAN server's 21 s keep-alives), the start */
         uint64_t since = k->read_at > k->t0 ? k->read_at : k->t0;
+        if (k->wait_at > since) since = k->wait_at;
         if (now - since < STALL_US) continue;
         k->stall_said = 1;
         char ip[16], a1[24], a2[24];
