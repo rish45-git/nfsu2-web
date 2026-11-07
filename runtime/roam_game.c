@@ -9995,6 +9995,7 @@ static void jump_behind(uint32_t car, float back, float left, float turn){
  * the one ExtraOptions' AutoDrive key and the end of a race use: the car's driver becomes an AI racer, 3).  The line at
  * the top of the HUD says so while it drives, and friends' name tags say "[BOT]" (RC_OPEN_BOT in the car's state).  Any
  * key gives the car back (AutoPilotOff 0x5FAF10, then SetInputMode 2 as the game's own way back does), and so does
+ * (as in a multiplayer race from free roam, where it races for the player: afk_frame's racing)
  * leaving free roam proper: a race, an outrun, a race lobby or trip, a dialog, the pause menu, a shop.  A controller's
  * buttons do not (the plugin does not read the controller): AfkBot = 0 for one who plays with a pad only. */
 #ifdef ROAM_HOST_WIN
@@ -10037,10 +10038,24 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
         float th = MRF32(ctl + 0x20cu), br = MRF32(ctl + 0x214u), st = (float)(int16_t)MR16(ctl + 0x1e0u) / 32767.f;
         if (th > 0.05f || br > 0.05f || st > 0.1f || st < -0.1f) here = 1;
     }
-    int can = in_roam && roaming() && rd32(G_RACEKIND_AFK) == 0u && local_status(1) == RC_ST_ROAM && g_mp.st == MP_IDLE &&
-              !mprace_owns_input() && !rd32(G_DLG_ID);
+    int roamok = in_roam && roaming() && rd32(G_RACEKIND_AFK) == 0u && local_status(1) == RC_ST_ROAM && g_mp.st == MP_IDLE &&
+                 !mprace_owns_input() && !rd32(G_DLG_ID);
+    /* ...and a multiplayer race from free roam (mprace.c's trip, racing: the race running, not paused or counting down,
+     * no dialog), the player's ask too, 2026-11-07: there the AI races for the player (a network race makes the
+     * player's car a human's only at its start, so not before the race runs) */
+    uint32_t race = rd32(G_RACE), drv = ok(car, 0x30) ? MR32(car + 0x24u) : 0;
+    int racing = mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && ok(race, 0x28) && MR32(race) == 4u && !rd32(G_DLG_ID) &&
+                 (drv == 1u || g_afk_on);
+    int can = roamok || racing;
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
-    if (g_afk_on && (here || !can)){ afk_set(c, host, 0, here ? "a key" : "out of free roam"); g_afk.idle_since = host; return; }
+    /* a race that ended under the bot: the game's own autopilot takes the car past the line (its results): ours is let go
+     * without a call, the car left to the game */
+    if (g_afk_on && !here && mprace_phase() == MPR_RACE && !(ok(race, 0x28) && MR32(race) == 4u)){
+        g_afk_on = 0; g_afk.idle_since = host;
+        rlog("[roam] f=%ld AFK: the race ended under the bot: the car is the game's (its results), the player's after\n", rh_frame());
+        return;
+    }
+    if (g_afk_on && (here || !can)){ afk_set(c, host, 0, here ? "a key" : "out of free roam or the race"); g_afk.idle_since = host; return; }
     if (!can){ g_afk.idle_since = host; return; }
     if (!g_afk_on && host - g_afk.idle_since >= (int64_t)g_afk.secs * 1000000) afk_set(c, host, 1, "");
     if (g_afk_on && host - g_afk.note_at >= 2000000){
