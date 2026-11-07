@@ -251,6 +251,19 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       on Opponents' Cars" for add-ons; to try with the laptop: friends' add-on cars with stock parts (build_ride, type
       46+), and whether the race's opponent (0x5F04D0's ride) loads CARS\SENTRAB12 with stock parts. Add-on types here:
       46 GS300, 47 CIVICEG, 48 INFIFX45, 49 CORVETTEC5, 50 SENTRAB12, 51 INTEGRA, 52 NEON04, 53 NSX91, 54 LANCER.
+    - **Item 7, a first fix: AddOnStockLook = 1 (build 291fdcad, 07:30; on the desktop and the stick):** our car an
+      add-on (type 46+) goes to friends' games with no parts (car_cfg returns before the part slots; an 86-byte record
+      for the SENTRAB12), so they build it stock (build_ride's stock way), as the roambot's NSX91 that drew whole.
+      Not tried between the two PCs: the laptop's game would not start at 07:27 and 07:28 (0xC0000005 at 0x1D2780 a
+      second in; its ReShade log: IDirect3D9::CreateDevice D3DERR_INVALIDCALL for a 2560x1440 windowed back buffer,
+      the screen 1920x1200; nobody at it, the display's state; its plugin and files unchanged). To try in the morning:
+      the laptop next to the desktop in free roam (F9), does it see the SENTRAB12 whole now.
+      **The race's side, not built:** the game's LAN car description (0x5F0320, thiscall (ride, the bit writer, with
+      parts); its callers 0x5876A1 and 0x5FE5B4 always pass 1) writes 0xAA and the parts, or with the third argument
+      0 a count of 0; its decoder (0x5F04D0) takes a count of 0 as stock parts (0x637040(0) on the ride, 0x5F0625).
+      So a hook at 0x5F0320 (83 EC 14 53 55, 5 bytes) that clears that byte for rides of type 46+ would send an add-on
+      stock to the race too. To build and try with the laptop (a two-PC race); a client might then show its own add-on
+      car stock in a race the other PC hosts, if it rebuilds its own car from the host's records.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;

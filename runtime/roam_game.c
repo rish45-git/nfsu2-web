@@ -757,6 +757,13 @@ static int car_cfg(uint32_t car, int mine, uint8_t *out, int cap, char *tname){
     cfg_rating(car, &c);                             /* the car as the game rates it (the others' games cannot: RC_EXT_RATING) */
     int horn = mine ? rh_horn_mine() : -1;           /* the horn the others hear from this car */
     if (horn >= 0){ c.has_horn = 1; c.horn = (uint8_t)horn; }
+    /* our car an Unlimiter add-on (type 46 and up): sent with no parts (AddOnStockLook = 1, the default), so the
+     * others build it stock.  The laptop drew the desktop's SENTRAB12 with its own parts as nothing but a name tag in
+     * free roam (2026-11-07), while an add-on with stock parts (a roambot's NSX91) drew whole on the desktop; the
+     * Unlimiter knows "Missing Parts on Opponents' Cars" for add-ons too.  A whole stock car beats an invisible one */
+    static int addon_stock = -1;
+    if (addon_stock < 0){ addon_stock = env_int("NFSU2_ROAM_ADDONSTOCK", 1, 0, 1); rlog("[roam] an add-on car of ours: %s\n", addon_stock ? "sent with stock parts (AddOnStockLook = 1)" : "sent with its parts"); }
+    if (mine && addon_stock && type >= TYPE_STOCK) return rc_carcfg_encode(&c, out, cap);
     for (uint32_t sl = 0; sl < RC_PART_SLOTS; sl++){
         uint32_t part = MR32(ride + 0x590u + 4u * sl);
         if (!part || !ok(part, 0xe)) continue;
