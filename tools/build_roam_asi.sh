@@ -57,6 +57,8 @@ $CC $CFLAGS -c -o "$O/obj/showoff_win.o" win/roam_asi/showoff_win.c
 $CC $CFLAGS -c -o "$O/obj/guards_win.o" win/roam_asi/guards_win.c
 # AI racers in LAN races (the game's own quick-race AI adder at the race's car making)
 $CC $CFLAGS -c -o "$O/obj/airacers_win.o" win/roam_asi/airacers_win.c
+# a car the main menu shows, into the career's garage (CarSaveKey, CarPutKey)
+$CC $CFLAGS -c -o "$O/obj/carcopy_win.o" win/roam_asi/carcopy_win.c
 # multiplayer races from free roam: the trip (the port's own mprace.c on mprace_host_win.h) and its host side
 $CC $CFLAGS -c -o "$O/obj/mprace.o"    runtime/mprace.c
 $CC $CFLAGS -c -o "$O/obj/mprace_win.o" win/roam_asi/mprace_win.c
@@ -65,7 +67,7 @@ $CC $CFLAGS -c -o "$O/obj/switch.o"    win/online/switch.c
 $CC $CFLAGS -D_WIN32_WINNT=0x0602 -c -o "$O/obj/vsock.o"     win/online/vsock.c
 $CC $CFLAGS -D_WIN32_WINNT=0x0602 -c -o "$O/obj/vsock_ws2.o" win/online/vsock_ws2.c
 $CC $CFLAGS -fno-builtin -fno-tree-loop-distribute-patterns -c -o "$O/obj/roam_libc.o" win/roam_asi/roam_libc.c
-OBJS="$O/obj/showoff_win.o $O/obj/guards_win.o $O/obj/airacers_win.o $O/obj/mprace.o $O/obj/mprace_win.o $O/obj/roam_keys.o $O/obj/switch.o $O/obj/vsock.o $O/obj/vsock_ws2.o $O/obj/roam_asi.o $O/obj/roam_game.o $O/obj/roam_win.o $O/obj/roam_core.o $O/obj/roam_libc.o"
+OBJS="$O/obj/showoff_win.o $O/obj/guards_win.o $O/obj/airacers_win.o $O/obj/carcopy_win.o $O/obj/mprace.o $O/obj/mprace_win.o $O/obj/roam_keys.o $O/obj/switch.o $O/obj/vsock.o $O/obj/vsock_ws2.o $O/obj/roam_asi.o $O/obj/roam_game.o $O/obj/roam_win.o $O/obj/roam_core.o $O/obj/roam_libc.o"
 $CC $LDFLAGS -e _DllMain@12 -Wl,-Map,"$O/NFSU2FreeRoam.map" -o "$O/dbg/NFSU2FreeRoam.asi" $OBJS $LIBS
 # the shipped file: the same link without the symbol table (strip(1) would
 # stamp the time into the header; tools/asi_check.py compares the sections)

@@ -180,7 +180,7 @@ static GetAsyncKeyState_t         p_gaks;
 static GetForegroundWindow_t      p_gfw;
 static GetWindowThreadProcessId_t p_gwtp;
 static int g_user_ok;
-#define HOTKEYS 4
+#define HOTKEYS 8
 static struct { int vk; int held; void (*fn)(void); const char *what; } g_hk[HOTKEYS];
 static int g_nhk;
 static DWORD g_front_since;                  /* GetTickCount since the game's window is in front (0: not) */

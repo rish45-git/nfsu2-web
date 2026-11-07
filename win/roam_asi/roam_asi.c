@@ -55,6 +55,8 @@ int  roam_keys_vk(const char *s);
 void roam_keys_hotkey(int vk, void (*fn)(void), const char *what);
 void roam_game_travel_key(void);              /* runtime/roam_game.c: the TravelKey */
 void roam_game_friend_key(void);              /* runtime/roam_game.c: the FriendKey */
+void carcopy_win_save(void);                  /* carcopy_win.c: CarSaveKey */
+void carcopy_win_put(void);                   /* carcopy_win.c: CarPutKey */
 void roam_keys_report(void);
 void roam_win_server_next(void);                  /* roam_win.c: the server switch */
 void roam_game_join_key(void);                    /* runtime/roam_game.c: the race lobby's JoinKey */
@@ -148,6 +150,8 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_CAREERCATCHUP", "CareerCatchUp", "0" }, /* career races: 0 no catch-up (the AI does not slow down when it leads), 1 the game's */
     { "NFSU2_ROAM_TRAVELKEY",   "TravelKey",  "F7" }, /* fast travel: to the GPS destination in career free roam (0: none) */
     { "NFSU2_ROAM_FRIENDKEY",   "FriendKey",  "F9" }, /* fast travel: next to a friend in free roam, the next one each press (0: none) */
+    { "NFSU2_ROAM_CARSAVEKEY",  "CarSaveKey", ""  },  /* main menu: save the car it shows (carcopy_win.c; empty: none) */
+    { "NFSU2_ROAM_CARPUTKEY",   "CarPutKey",  ""  },  /* main menu: the saved car into the career's first free slot */
     { "NFSU2_ROAM_AIRACERS",    "AiRacers",   "2" },  /* AI racers in each LAN race beside the players (0..4; the grid has 6 places) */
     { "NFSU2_ROAM_AIEDGE",      "AiEdge",     "5" },  /* their cars rated this % above the best player's (0..50) */
     { "NFSU2_ROAM_AISKILL",     "AiSkill",    "9" },  /* their skill, 0..9 (9 the game's top) */
@@ -833,6 +837,13 @@ static void init_once(void){
         const char *fk = roam_opt("NFSU2_ROAM_FRIENDKEY");
         int fv = roam_keys_vk(fk);
         if (fv && fv != vk && fv != jv && fv != tv){ roam_keys_hotkey(fv, roam_game_friend_key, "FriendKey: fast travel to a friend"); roam_log("[roam] fast travel: %s jumps next to a friend\n", fk); }
+        const char *ck = roam_opt("NFSU2_ROAM_CARSAVEKEY"), *pk = roam_opt("NFSU2_ROAM_CARPUTKEY");
+        int cv = ck && ck[0] ? roam_keys_vk(ck) : 0, pv = pk && pk[0] ? roam_keys_vk(pk) : 0;
+        if (cv && pv && cv != pv && cv != vk && cv != jv && cv != tv && cv != fv && pv != vk && pv != jv && pv != tv && pv != fv){
+            roam_keys_hotkey(cv, carcopy_win_save, "CarSaveKey: save the main menu's car");
+            roam_keys_hotkey(pv, carcopy_win_put, "CarPutKey: the saved car into the career");
+            roam_log("[car] in the main menu: %s saves the car it shows, %s puts the saved car into the career's first free slot\n", ck, pk);
+        }
     }
     g_ready = 1;
     roam_log("[roam] ready: the network starts with the game's first frame\n");
