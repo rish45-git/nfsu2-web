@@ -200,6 +200,12 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **The desktop's game crashed at 03:10:52** as it left free roam (the world torn down at 03:10:50): an access
+    violation in SPEED2.EXE at 0x73CA78, in 0x73CA50 (a lookup through the table at [0x8B7BB0]: +0x38 an index, +0x34
+    the entries, +0x58 + 4 x (entry >> 16 & 31) a pointer that was 0, read at +0x2C). The plugin logged no fault. It
+    was the first exit after the stage-up movie (Scene07, UpperClass): suspect, not shown. The career was saved at
+    03:08:39, before it. The catch-up build (46ea8b3f…) was installed on the desktop after it (backup *.before-46ea8b3f)
+    and is on the stick; the laptop closed cleanly at 03:10:28.
   - **The race's movie works** (03:08-03:09, the desktop): the circuit win moved the career to stage 2, the crib's
     autosave had it, its way to the world was held, Scene07 then UpperClass played (the garage's menu showed through
     faintly in the player's photo), and then the world; back in free roam at 03:09:35. No sponsor offers yet (stage 1
