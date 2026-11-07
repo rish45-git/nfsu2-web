@@ -200,6 +200,46 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **Round 2 of the player's list** (commits 27ed3432..801e559f, build d54c898f…, installed on the desktop 04:21, on the
+    USB stick and in C:\dev\laptop-update for the laptop; its old plugin in out/win/backup/*.before-34d11caa):
+    - **Item 1, the race bot keeping the route** (5f04e498): while it races, the car's share of the route done (the race
+      coordinator's racer record +0x14) is watched; no progress for 8 s (4 s backwards) puts the car back on the route
+      as R does (Player::ResetCar 0x6009A0, thiscall, no arguments), the AI off for it and on 1.5 s later (AutoPilotOn
+      picks the AI's way along its road from the car's heading: 0x5FAE91..0x5FAF09, the AI's +0x10). Not tried.
+    - **Item 2, the AI's skill** (27ed3432): `BotSkill` (2) into [0x89E7A8] in every multiplayer race. Not tried.
+    - **Item 3, the free-roam bot**: tried on the desktop alone (04:00-04:09): the racer AI (kind 3) drove 2.5 km in two
+      minutes at 65-105 km/h, no hard hit. The traffic driver on the player's car (Car::SetDriverKind 0x5EBA30 with
+      4, TrafficController) closed the game 2 s after the takeover (04:03:19, no fault logged), so it's gone. New: a
+      stuck car (under 8 km/h for 5 s) is reset onto the road; every 5 s a line "AFK in free roam: ..." (63c7f866).
+      The driver kinds (0x5EBBC4 table): 0 NullController, 1 RealController (human), 2 DragController, 3
+      RaceCarController (HBRaceCarController), 4 TrafficController, 5 a small one (0x68 bytes).
+    - **Item 4, bots following the GPS: not done.** The GPS's road route is the planner at 0x81CBC0 (also the race's
+      route: 0x609D27 runs it in a race, 0x60A9BE clears it): Start 0x40C440 (from, its heading, to, mode +0x16D4, flag,
+      the car it routes for +0x17A4), states +0 0 idle .. 3 done, run each frame by 0x4268A0 (0x422B90 the search).
+      RealController (the human's, vtable 0x785230, vt[3] 0x42CAA0) keeps the GPS target at +0x400 and plans to it
+      (0x42A360 -> 0x4188C0, mode 2 for a human, 1 for an AI); the planner tells the car's controller through vt[19]
+      (0x402350), which is "ret 8" for every controller, so the racer AI never hears of the route. Setting a GPS in the
+      game: the world map (M), a category's row, Space. Next: our own route following (the road network as walls.c
+      reads it) feeding the racer AI's way at junctions, or our own steering.
+    - **Item 5, 3-4 AI racers in multiplayer races: not done.** The LAN race has human racers only; AI cars would run
+      on the host and go to the others as a player's car does (or every game races the same AI, which drifts apart).
+    - **Item 7, the SENTRAB12 shown as a spoiler: narrowed down, not fixed.** The laptop's log of the 03:17 race:
+      its game had the desktop's racer as SENTRAB12 (type 50, an Unlimiter add-on; COROLLA is the game's own type 2,
+      shown whole on the desktop) and loaded it fine in free roam (the plugin's slot, 93 parts), but before the race
+      only CARS\SPOILER came back from HIBERNATING, nothing of CARS\SENTRAB12. Its GEOMETRY.BIN is 7.7 MB (stock
+      cars 4.2-4.4 MB, COROLLA 5.7 MB). The build logs each CARS file a race trip loads ("[guard] the race loads ...",
+      a hook on the resource loader 0x57CFB0; 801e559f) for the next race.
+    - **Item 8, the crash at 0x73CA78** (8fff807e): in the sound library's lookup (0x73CA50: [0x8B7BB0] +0x38 the index
+      by sound id, +0x34 the sounds, +0x58 the banks by slot) a bank slot of 0 now goes the function's own "not this
+      bank" way (0x73CAB7) instead of reading +0x2C of 0; counted and logged ("[guard]"). Installed, the crash not
+      reproduced.
+    - **Item 10, the lobby on a controller** (1b2a9ecc): Engage (D-pad Up) held 1 s away from every start does J's
+      join from afar or leave. Not tried. **Item 11, the lobby line over other screens** (1b2a9ecc): tried on the
+      desktop, it shows over the world map and the pause menu while in a lobby.
+    - **Item 12, doors between different car models** (2e5415d2): a friend's car type's PARTS_ANIMATIONS.BIN is
+      loaded once one of its parts opens, and 0x438140 (the game's drop of every bank) is the plugin's (ours unloaded
+      first, the next bank read before one is deleted), as runtime/showoff.c. Two garage visits went through it fine
+      on the desktop; a friend's door on another model not tried.
   - **The player's 13-item list, round 1 built** (commit b178f110, build 43ca1fc2…, installed on the desktop 03:40 and on
     the USB stick for the laptop; not tried in the game):
     - the faster way back (item 6): repeated call-offs after half a second;
