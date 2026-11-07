@@ -224,6 +224,16 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     - **The free-roam AFK bot stays off on a race start** (mp_spot_here), and **opening or joining a lobby in an add-on car**
       (type 46+) says on the lobby's line for 8 s that the others may see only its spoiler (both tried on the desktop).
     - A one-player LAN race can't be had (the game: "The game failed to start"), so AI races need two PCs.
+    - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
+      2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
+      slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;
+      0x1D2780 a start). The plugin's 0x438140 replacement matches the game's walk step for step. Not reproduced.
+    - **Open: keys nobody pressed?** At 06:41:06 the laptop's log has "[keys] JoinKey" (GetAsyncKeyState J) with no
+      one at its keys (its session pressed nothing), and 37 s later the desktop's lobby went to its countdown as by
+      Enter. If the player didn't press them, phantom key states start races.
+    - **Item 7, more:** on the laptop the desktop's SENTRAB12 looked invisible in the race and in free roam too (a
+      floating name tag), though the plugin's slot loaded it ("ready after 42 frames"); the race's loader log on the
+      laptop has only its own 240SX's PARTS_ANIMATIONS.
     - Open: the cutscene the player missed in a solo career race (05:00 on the laptop, build 46ea8b3f): which one is
       not known; the plugin's Solo path calls the card's Accept (0x499B50) as the card's own handler does.
   - **AI racers in multiplayer races (item 5), built and tried** (commits 30afe20f, 01c75c74, 82ba25c3; build 42fdf870…
