@@ -195,6 +195,13 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **The race bot works** (03:03, build 2c859a50 on both PCs, a 3-lap circuit the desktop hosted): it took over on
+    both PCs after 30 s in the running race (desktop 106 s, laptop 149 s, then again 30 s later), and a key gave each
+    car back. The player: the bots feel held back ("limiters"). That's the game's catch-up, [0x89E7F8]: with two player
+    cars 0x5F6740 sets each one's torque, governor and grip from the gap (vehicle +0x468), and the AI reads it
+    (0x4084B9, 0x41757B). Now off in multiplayer races by default (`CatchUp = 0`, commit 919d13b9, build 46ea8b3f…,
+    not installed). The AI's skill (the game's difficulty) is not found yet: the race options at 0x89E7A0.. hold the
+    race type, catch-up and flags; 0x89E7D8 is a flag the AI tests, not a level.
   - **The race bot's blocker, found 02:53** (the 259a2dcd diagnostic, a sprint the laptop hosted): both PCs, every 10 s,
     "race state 4, driver 1, throttle 0 brake 0 steer 0, dialog 00000008/9". [0x838974] stays 8 or 9 through a LAN
     race with no dialog up, so the bot's check failed and its idle time reset each frame. Fixed in 07b5d0d2 (build
