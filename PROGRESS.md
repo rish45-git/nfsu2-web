@@ -161,6 +161,19 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   next session the joiner had left; the trip waited (it lets a no-button "please wait" end by itself) until its 4
   minutes on the way back ran out. Now (plugin only) Esc every 5 s from 15 s on. Whether Esc ends that dialog is not
   known yet.
+- **The AFK bot and a one-time bonus** (commit afa9e0c1, installed on the DESKTOP only, 2026-11-07 ~02:10; its old
+  plugin and .ini in out/win/backup/*.before-afkbot):
+  - `AfkBot = 60`: after 60 s without a key event or the car's controls moving in career free roam, the game's own
+    autopilot drives (Player::AutoPilotOn, the one ExtraOptions' AutoDrive key F6 uses). The HUD's top line says so,
+    and friends' tags say "[BOT]" (RC_OPEN_BOT, a spare bit of the open parts' byte, in the shared core; builds before
+    it show no tag). Any key gives the car back. Controller buttons don't.
+  - How the autopilot drives in free roam, and how to make it "extremely competitive", are not known yet: the
+    function sets no skill.
+  - `BonusCash = 2000` (desktop .ini only): once per profile, into the career's bank in free roam, listed in
+    `NFSU2FreeRoam.bonus`. The game's next save keeps it.
+  - Unlocks on the desktop: ExtraOptions' `UnlockAllThings = 1` ([Gameplay]) was already on; now also the Unlimiter's
+    `AllNewCarsInitiallyUnlocked = 1` (the add-on cars; the old settings in out/win/backup).
+  - The save file itself was not edited: it carries a 16-byte check value that is not an MD5 of its data.
 - Not tried in the game: all of these. The README in `C:\dev\laptop-update` gets them when the build is installed.
 
 **Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
