@@ -125,8 +125,13 @@ int main(int argc, char **argv){
     if (radius < 2.f) radius = 2.f;
     static uint8_t car[RC_CFG_MAX]; int carlen = 0;
     rc_carcfg cc; int e = 0;
-    if (!strcmp(argv[2], "synth")){       /* a made-up record: the bots see each other, a game may not know the car */
-        memset(&cc, 0, sizeof cc); cc.type_hash = rc_fnv1a("350Z"); snprintf(cc.type_name, sizeof cc.type_name, "350Z");
+    if (!strcmp(argv[2], "synth") || !strncmp(argv[2], "synth:", 6)){   /* a made-up record (synth: a 350Z; synth:NAME the car
+                                           * type of that folder name, e.g. synth:NSX91): the bots see each other, a game may not know the car */
+        /* synth:NAME[:HASH]: HASH (hex) is the game's own type hash, CarTypeInfo +0xD0, which a real record carries */
+        char nm[32]; snprintf(nm, sizeof nm, "%s", argv[2][5] == ':' && argv[2][6] ? argv[2] + 6 : "350Z");
+        char *colon = strchr(nm, ':'); uint32_t th = 0;
+        if (colon){ *colon = 0; th = (uint32_t)strtoul(colon + 1, 0, 16); }
+        memset(&cc, 0, sizeof cc); cc.type_hash = th ? th : rc_fnv1a(nm); snprintf(cc.type_name, sizeof cc.type_name, "%s", nm);
         carlen = rc_carcfg_encode(&cc, car, sizeof car);
     } else {
         FILE *fp = fopen(argv[2], "rb");

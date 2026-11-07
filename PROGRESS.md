@@ -238,6 +238,19 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       **BackgroundFps = 30 (build eab49794, 07:10):** behind another window the plugin's frame sleeps to 30 frames a
       second (roam_keys.c bg_cap, QueryPerformanceCounter), the paused world needs no more: 904 frames in 30 s behind
       Notepad, the network on; 5400 again back in front. On the stick and in C:\dev\laptop-update.
+    - **Minimized** (07:23, the frame-cap build): 904 frames in 30 s, the network on, a friend (a roambot) kept; restored
+      fine (ShowWindow 9), drawn as before.
+    - **FriendKey (F9) tried** (07:21): with the friend 17 m away it says "To a friend: RoamBot1 is right here" (no jump).
+    - **Item 7, tried on the desktop alone with roambot** (07:18-07:22; `synth:NAME:HASH` now makes a record of any car
+      type, HASH the game's own type hash, CarTypeInfo +0xD0, which real records carry: 350Z 0xAC6D1, SENTRAB12
+      0xAC2CE7B1, NSX91 0x35D5002, CORVETTEC5 0xAC07FA83; a plain fnv1a of the name is "unknown here" and falls back by
+      name prefix, so the first try was not a fair one). The add-on NSX91 (type 53, GEOMETRY.BIN 11.8 MB, bigger than
+      SENTRAB12's 7.7 MB) with stock parts, as a friend's car in free roam, was loaded ("ready after 53 frames") and
+      drawn whole next to the desktop's SENTRAB12. So add-on types and big geometry are fine here. Left: the laptop's
+      case had the desktop's real record (custom parts) and a stock car of its own. The Unlimiter warns of "Missing Parts
+      on Opponents' Cars" for add-ons; to try with the laptop: friends' add-on cars with stock parts (build_ride, type
+      46+), and whether the race's opponent (0x5F04D0's ride) loads CARS\SENTRAB12 with stock parts. Add-on types here:
+      46 GS300, 47 CIVICEG, 48 INFIFX45, 49 CORVETTEC5, 50 SENTRAB12, 51 INTEGRA, 52 NEON04, 53 NSX91, 54 LANCER.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;
