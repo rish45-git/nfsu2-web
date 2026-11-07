@@ -52,7 +52,7 @@ PC cannot reach without a virtual network adapter, and the SSL byte needs a patc
 | 3 | virtual Winsock for the Online lobby (the 22 functions, Netbios, DNS, SSL byte, streams, ping) | **the lobby works in the game** (login, lobby, a created game room; see below); chat and a clean quit confirmed; races with a second player: phase 4 |
 | 4 | Online races (UDP 3658 between vips) against a browser player; 5-6 player games and 2-lap drift are untested on an unmodified exe | **a race between two native PCs works** (see below); a browser player, 3+ players and drift not yet |
 | 5 | claim token, idle release, logs; nfsu2.xyz only with the owner's OK | |
-| 6 | free-roam race lobbies (roam_game.c `mp_*` + mprace.c) in the plugin, for two players (host + one friend) on our own server; a runtime server switch | **steps 1-5 built and committed** (below); checked by probes against the local server, **nothing of it tried in the game yet** |
+| 6 | free-roam race lobbies (roam_game.c `mp_*` + mprace.c) in the plugin, for two players (host + one friend) on our own server; a runtime server switch | **works in the game** between the desktop and the laptop (sprint, drift, drag; either PC hosting; F8; ToHost); built, not tried in the game: sponsors and movie after a win, the door fix; friends over Tailscale set up, no friend connected yet. "Current state" below |
 
 ## Environment (this PC)
 
@@ -112,18 +112,95 @@ stance): drive stock cars online, or disable them in the test copy.
 
 ## Next
 
-1. **Phase 4, more races:** 3 or more players (a third machine, or a browser player), drift and the other race types,
-   a long session, quitting right after a race; read the second machine's log too. A browser player needs the browser
+1. **Phase 6's open list** ("Current state" in the Phase 6 section): try the sponsors and movie, the door fix, a
+   crew-mate's win and the first friend over Tailscale in the game; the player's decision on Partner in races not
+   finished; quit notices, controller keys for the lobby, the lobby line without the HUD.
+2. **More races:** 3 or more players (a friend over Tailscale, or a browser player), the remaining race types (URL
+   heats, circuits with more laps), a long session, quitting right after a race. A browser player needs the browser
    build of the repo, or th0mk's OK to use nfsu2.xyz.
-2. **`server.dll`** (step 7 of phase 3): hook its imports when the game loads it, so hosting from the LAN menu works
-   on the virtual LAN (today the Online menu is the way to race while the hooks are on).
-3. **A second PC at home** is set up as in the phase-4 section (port proxy, firewall rule, `NFSU2_HOST`); if the
-   desktop's address changes, all three need the new one (a DHCP reservation avoids it).
+3. (Done in phase 6: `server.dll` on the virtual LAN, hosting from the LAN menu; the laptop as a second PC at home. If
+   the desktop's address changes, the LAN port proxy, the firewall rule, `NFSU2_HOST` and the laptop's `Server` need
+   the new one: a DHCP reservation avoids it.)
 4. Smaller open items: fix `tools/roam_fingerprint.py` (read the names from the preprocessor); test the switch
    client's queue (`--max-peers 1`), kick/ban (`nfsu2-server ctl`), `wss://` and a claimed name; the peer bitmap
    (a connect to an absent virtual address: WSAETIMEDOUT after 3 s instead of WSAEHOSTUNREACH).
 
 ## Phase 6: free-roam race lobbies in the plugin (plan, 2026-11-06)
+
+### Current state (2026-11-07 01:15)
+
+The player's guide is `C:\dev\laptop-update\README.md` (outside the repo: it has the player's addresses and paths).
+What follows is the record: how it was planned, built and tested, in order.
+
+**Builds.** The newest plugin is `out/win/NFSU2FreeRoam.asi` (commit 46ef6660 and later; 517,632 bytes, SHA-256
+`9125e302…`), asi_check PASS. It is installed on the desktop (`C:\Games\NFSU2-online\scripts`). The same file is in
+`C:\dev\laptop-update` and `C:\dev\friends-pack\scripts`. **The laptop still runs `08ad90c5…`**: the ToHost build,
+without the door fix, sponsors or movie. Older builds are kept in `out/win/backup/` (`NFSU2FreeRoam.phase4.*`,
+`.phase6-try1.asi`, `.before-tohost.asi`, `.before-showoff.asi`).
+
+**Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
+- free roam online with names over cars (`Labels`) and the HUD's top line natively;
+- F8 server switch (`Servers`, `ServerKey`);
+- the game's LAN menu on the virtual LAN (server.dll: commits 713461e6, 4a145c6f);
+- race lobbies from career markers: the card's Yes = Multiplayer, joining with Enter at the marker or J from afar
+  (`JoinKey`, `FarJoin`);
+- the automatic race trip, with either PC hosting, in sprint, drift and drag races;
+- the career credit for one's own win, with the place's prize top-up;
+- Partner (`Partner`): the friend's win counted on the laptop's side (the desktop won);
+- back next to the host after a race (`ToHost`: commit 7b31bd8d, a 709 m jump);
+- the laptop's car-dealer crash fixed by installing the desktop's Unlimiter and Stance mods there.
+
+**Built, not tried in the game:**
+- the door fix (`ShowOff`: commits 097e4e6a, 33689c5b);
+- sponsor offers and the race's movie after a multiplayer win (`Movies`: commit 46ef6660);
+- a crew-mate's win counting (`Crew`: shared code, crew-mates go into the race's friends list as the Partner does);
+- the laptop as a joiner whose Partner wins, on the desktop's side: the desktop was "not finished" in the drag race.
+
+**Friends over the internet:**
+- Tailscale is on the desktop: 100.76.38.37, machine "v2", the account rishanoop@.
+- `win/online/tailscale-setup.ps1` has been run: a port proxy 100.76.38.37:8691 -> 127.0.0.1:8691 and the firewall
+  rule "NFSU2 server (Tailscale)" for 100.64.0.0/10.
+- The server runs with `NFSU2_HOST=192.168.0.109,100.76.38.37`. switch_probe over the Tailscale address passes 7/7
+  (from the desktop itself). No friend has connected yet.
+- Desktop, laptop and the friend template are all in `Room = RishiCrew` and `Crew = RishiCrew`. The friends' pack is
+  `C:\dev\friends-pack` (zipped as `C:\dev\NFSU2-friends-pack.zip`): the plugin, Unlimiter + UnlimiterData,
+  StanceMod, an .ini with `Server = ws://100.76.38.37:8691/lan`, and a README.
+
+**The server after a reboot** (it does not start by itself; keep the window open while people play):
+`wsl.exe -e bash -lc "NFSU2_HTTP_PORT=8691 NFSU2_HOST=192.168.0.109,100.76.38.37 exec bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run"`.
+The 2026-11-07 01:03 restart was a `nohup setsid` start, with its output in WSL `~/nfsu2-server.log`: it lives only
+as long as some `wsl.exe` session does (see "Local server").
+
+**Settings added in phase 6** (win/roam_asi/NFSU2FreeRoam.ini documents each; OPTS in roam_asi.c):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `Servers` | empty | the servers F8 cycles through |
+| `ServerKey` | F8 | the key that switches |
+| `Labels` | 1 | names over the other players' cars |
+| `JoinKey` | J | join from afar, or leave a lobby joined from afar |
+| `FarJoin` | 1 | hosting: anyone in the room may join from afar |
+| `Partner` | empty | one name counted as a friend |
+| `ToHost` | 1 | the joiner goes next to the host after a race |
+| `ShowOff` | 1 | each car keeps its own doors, hood and trunk, and yours are sent |
+| `Movies` | 1 | the race's movie after a multiplayer win |
+
+**Open:**
+1. Try in the game: sponsors and movie, the door fix, a crew-mate's win, a friend over Tailscale.
+2. The player's decision on Partner in races not finished: in drift and drag races the game ends the race when the
+   winner is in, so a slower friend is "not finished" and gets no credit.
+3. Quit notices between racers (no N2QT natively).
+4. Controller keys for the lobby.
+5. The lobby line without the HUD.
+6. Smoothing the free-roam drop-outs at about 950 m.
+7. The desktop's one hang at start (cause unknown).
+8. The laptop not going full screen (not the plugin).
+9. Waiting wins are lost on a restart (no MPWINS.DAT natively).
+10. Door sync only between cars of the same model.
+11. English texts only.
+12. The exe fingerprint does not cover the new game functions: roam_fingerprint.py is still broken.
+
+### The plan, and how it went (2026-11-06 and 07, in order)
 
 **How the browser does it (read for this plan).** Two halves, both shared C:
 - *The lobby*, `runtime/roam_game.c` `mp_*` (behind `MPRACES`, 0 when `ROAM_HOST_WIN`): race spots from the career's
@@ -426,6 +503,11 @@ the player's own car, and send the door state with the car's state so the other 
   404 to everything): use `NFSU2_HTTP_PORT=8691`. **Keep a `wsl.exe` session open for as long as it runs** (a process
   started with nohup/setsid is killed when the last wsl.exe session ends). From Git Bash, as a background task:
   `MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'NFSU2_HTTP_PORT=8691 exec bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run'`
+  **Since 2026-11-07, with the home network and Tailscale** (the player, from PowerShell, its window kept open):
+  `wsl.exe -e bash -lc "NFSU2_HTTP_PORT=8691 NFSU2_HOST=192.168.0.109,100.76.38.37 exec bash /mnt/c/dev/nfsu2-web/win/online/wsl-server.sh run"`
+  (its banner: `names : localhost, 192.168.0.109, 100.76.38.37`). Windows forwards 192.168.0.109:8691 and
+  100.76.38.37:8691 to 127.0.0.1:8691 (`netsh interface portproxy show v4tov4`); the firewall rules are "NFSU2 server
+  (LAN)" and "NFSU2 server (Tailscale)".
 - Windows reaches it at `http://127.0.0.1:8691/` (WSL localhost forwarding works, no mirrored mode needed);
   `/players` answers `{"players":0,...}`; the switch is `ws://127.0.0.1:8691/lan`.
 - `wsl-server.sh bots 3 15` (3 simulated roam players, 15 s): all 3 welcomed and linked, 2349 snapshots checked, 0 bad,
