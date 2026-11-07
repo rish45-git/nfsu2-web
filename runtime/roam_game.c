@@ -286,6 +286,7 @@ static uint32_t rd32(uint32_t a){ return ok(a, 3) ? MR32(a) : 0u; }
 static uint32_t gcall0(CPU *c, uint32_t fn, uint32_t ecx){ return rh_call(c, fn, ecx, 0, 0, 0); }
 static uint32_t gcall1(CPU *c, uint32_t fn, uint32_t ecx, uint32_t a){ return rh_call(c, fn, ecx, 0, 1, &a); }
 static uint32_t player_car(void){ uint32_t p = rd32(G_PLAYER1); return p ? rd32(p + 4u) : 0; }
+static int g_afk_on;                          /* the plugin's AFK bot drives the player's car (afk_frame) */
 static uint32_t world(void){ uint32_t w = rd32(G_WORLD); return ok(w, 0x80) ? w : 0; }
 static int du_racing(uint32_t race);
 static int du_battling(void);
@@ -460,6 +461,7 @@ typedef struct {
     int64_t  load_t0, load_wait; long load_f0;    /* load_wait: how long the load may take (loads_waiting) */
     int      hidden;
     int      paused;                          /* the friend is paused (for a second now): so says the name over the car */
+    int      bot;                             /* the friend is away, its game's AI drives (RC_OPEN_BOT): so says its name */
     int64_t  paused_since;
     int64_t  near_since;                      /* within DU_NEAR_M of the player's car since (0: not), for an outrun */
     int      ghost;                           /* solid cars: no collision body until clear of the player's car */
@@ -707,6 +709,7 @@ static int car_state(uint32_t car, rc_state *s, int horn, uint8_t *thumps, int *
     int lights = car == player_car() ? rh_lights_mine() : 0;
     if (lights == 1) s->bits |= RC_BIT_DARK;
     s->hibeam = lights == 2;
+    s->bot = car == player_car() && g_afk_on;      /* the plugin's AFK bot drives (afk_frame) */
     if (g_sync_paused > 1){ for (int i = 0; i < 3; i++){ s->v[i] = 0; s->w[i] = 0; } s->speed = 0; s->rpm = 0; for (int i = 0; i < 8; i++) s->slip[i] = 0; }
     for (int i = 0; i < 3; i++) if (!__builtin_isfinite(s->p[i]) || !__builtin_isfinite(s->v[i])) return 0;
     /* the stamp clock may run a little faster than the world (it is pulled
@@ -2942,8 +2945,11 @@ static void tags_update_seat(CPU *c){
         float a = t[q].tier < 2 || photo || d <= TAG_FULL_M ? 1.f : (TAG_FADE_M - d) / (TAG_FADE_M - TAG_FULL_M);
         if (a < 0.06f) continue;
         char tx[TAG_TEXT_MAX];
-        if (s->crew && d >= TAG_NEAR_M) tag_far(tx, sizeof tx, s->name, s->paused, d);
-        else snprintf(tx, sizeof tx, s->paused ? "%s (paused)" : "%s", s->name);
+        if (s->crew && d >= TAG_NEAR_M){
+            char nb[RC_NAME_MAX + 8]; snprintf(nb, sizeof nb, s->bot ? "%s [BOT]" : "%s", s->name);
+            tag_far(tx, sizeof tx, nb, s->paused, d);
+        }
+        else snprintf(tx, sizeof tx, s->bot ? "%s [BOT]" : s->paused ? "%s (paused)" : "%s", s->name);
         rh_hud_marker(&hx, &hy);
         /* the flag (its texture there: else none, not a gap) and its gap left of the name, the two centred on hx */
         float fw = 0.f;
@@ -6578,6 +6584,7 @@ static void mp_pad(int64_t host, int in_roam){
 #define MP_BACK_US      60000000
 static struct { uint32_t host; int64_t until, seen_at; } g_mpb;   /* seen_at: since when its car is out here */
 static void mp_back_frame(int64_t host, int in_roam);
+static void afk_frame(CPU *c, int64_t host, int in_roam);
 #ifdef ROAM_HOST_WIN
 static int mp_to_host_on(void){
     static int v = -1;
@@ -9746,6 +9753,7 @@ void roam_game_frame(CPU *c){
             if (!v->paused) s->paused_since = 0;
             else if (!s->paused_since) s->paused_since = host;
             s->paused = s->paused_since && host - s->paused_since >= 1000000;
+            s->bot = v->have_pose && v->pose.ext && v->pose.bot;
             if (s->st == SL_CREATING){
                 if (g_heavy >= HEAVY_PER_FRAME || !load_may_start(c)) continue;   /* CreateCar (and the ride after): the next frame */
                 int r = finish_create(c, k);
@@ -9841,6 +9849,7 @@ void roam_game_frame(CPU *c){
 #if MPRACES
     mp_frame(c, host, in_roam, world_runs, mpfrom, mpin, nmpin);
     mp_back_frame(host, in_roam && world_runs);
+    afk_frame(c, host, in_roam && world_runs);
     mp_panel(host, in_roam);
 #endif
     g_engage = in_roam && world_runs && engage_ours();
@@ -9979,6 +9988,69 @@ static void jump_behind(uint32_t car, float back, float left, float turn){
     MR16(G_HOTPOS_ANGLE) = (uint16_t)(MR16(car + 0x40cu) + (int)(turn * 65536.0f / 360.0f));
     MR8(G_HOTPOS_VALID) = 1; MR8(G_HOTPOS_JUMP) = 1;
 }
+/* ---- the AFK bot (the plugin only; a player's ask, 2026-11-07) --------------------------------------------------------
+ * A player away from the keyboard in career free roam (no key event of the game's keyboard, roam_keys_player_at, and
+ * no throttle, brake or steering on the car's controls: a controller's player counts as here while it drives) for
+ * AfkBot seconds (the .ini; 60 by default, 0 off) hands the car to the game's own AI: Player::AutoPilotOn (0x5FAE20,
+ * the one ExtraOptions' AutoDrive key and the end of a race use: the car's driver becomes an AI racer, 3).  The line at
+ * the top of the HUD says so while it drives, and friends' name tags say "[BOT]" (RC_OPEN_BOT in the car's state).  Any
+ * key gives the car back (AutoPilotOff 0x5FAF10, then SetInputMode 2 as the game's own way back does), and so does
+ * leaving free roam proper: a race, an outrun, a race lobby or trip, a dialog, the pause menu, a shop.  A controller's
+ * buttons do not (the plugin does not read the controller): AfkBot = 0 for one who plays with a pad only. */
+#ifdef ROAM_HOST_WIN
+#define FN_AUTOPILOT_ON  0x005fae20u   /* Player::AutoPilotOn(this) */
+#define FN_AUTOPILOT_OFF 0x005faf10u   /* Player::AutoPilotOff(this) */
+#define FN_SETINPUTMODE  0x00605c70u   /* Player::SetInputMode(this, mode): 2 the player's own input */
+#define G_RACEKIND_AFK   0x0089e7b0u   /* 0 free roam, 7 an outrun */
+uint32_t roam_keys_player_at(void);
+static struct { uint32_t key_at; int64_t idle_since, note_at, on_at; int secs; } g_afk;
+static void afk_note(int64_t host, const char *t){
+    roam_plat_lock();
+    snprintf(g_hnote, sizeof g_hnote, "%s", t);
+    g_hnote_until = host + 3000000;
+    roam_plat_unlock();
+}
+static void afk_set(CPU *c, int64_t host, int on, const char *why){
+    uint32_t pl = rd32(G_PLAYER1), car = pl ? rd32(pl + 4u) : 0;
+    if (on == g_afk_on || !ok(pl, 0x40) || !ok(car, 0x30)) { if (!on) g_afk_on = 0; return; }
+    if (on){
+        rh_call(c, FN_AUTOPILOT_ON, pl, 0, 0, 0);
+        g_afk_on = 1; g_afk.on_at = host; g_afk.note_at = 0;
+        rlog("[roam] f=%ld AFK: no input for %d s: the game's AI drives the car (its driver %u now)\n", rh_frame(), g_afk.secs, MR32(car + 0x24u));
+    } else {
+        rh_call(c, FN_AUTOPILOT_OFF, pl, 0, 0, 0);
+        uint32_t mode = 2; rh_call(c, FN_SETINPUTMODE, pl, 0, 1, &mode);
+        g_afk_on = 0;
+        rlog("[roam] f=%ld AFK: %s: the car is the player's again after %.0f s (its driver %u)\n", rh_frame(), why,
+             (double)(host - g_afk.on_at) / 1e6, MR32(car + 0x24u));
+        afk_note(host, "You're back: the car is yours again");
+    }
+}
+static void afk_frame(CPU *c, int64_t host, int in_roam){
+    if (!g_afk.secs) g_afk.secs = env_int("NFSU2_ROAM_AFKBOT", 60, 0, 3600) ? env_int("NFSU2_ROAM_AFKBOT", 60, 0, 3600) : -1;
+    if (g_afk.secs < 0) return;
+    if (g_afk.secs < 10) g_afk.secs = 10;
+    uint32_t k = roam_keys_player_at(), car = player_car(), ctl = car ? rd32(car + 0x30u) : 0;
+    int here = k != g_afk.key_at;
+    g_afk.key_at = k;
+    if (!g_afk_on && ok(ctl, 0x220)){
+        float th = MRF32(ctl + 0x20cu), br = MRF32(ctl + 0x214u), st = (float)(int16_t)MR16(ctl + 0x1e0u) / 32767.f;
+        if (th > 0.05f || br > 0.05f || st > 0.1f || st < -0.1f) here = 1;
+    }
+    int can = in_roam && roaming() && rd32(G_RACEKIND_AFK) == 0u && local_status(1) == RC_ST_ROAM && g_mp.st == MP_IDLE &&
+              !mprace_owns_input() && !rd32(G_DLG_ID);
+    if (!g_afk.idle_since || here) g_afk.idle_since = host;
+    if (g_afk_on && (here || !can)){ afk_set(c, host, 0, here ? "a key" : "out of free roam"); g_afk.idle_since = host; return; }
+    if (!can){ g_afk.idle_since = host; return; }
+    if (!g_afk_on && host - g_afk.idle_since >= (int64_t)g_afk.secs * 1000000) afk_set(c, host, 1, "");
+    if (g_afk_on && host - g_afk.note_at >= 2000000){
+        g_afk.note_at = host;
+        afk_note(host, "You're away: the AI drives your car [BOT]. Press any key to take it back");
+    }
+}
+#else
+static void afk_frame(CPU *c, int64_t host, int in_roam){ (void)c; (void)host; (void)in_roam; }
+#endif
 /* back from a race of a lobby we joined (g_mpb, set in mp_frame): once the host's car is out on our screen (its slot
  * active and shown, a sane place, a second after it came: its states, not the slot's first guess), our car jumps
  * 6 m to its left, 2 m behind, its heading; the friends' cars are ghosts until clear of ours (as car_rescue).  Not

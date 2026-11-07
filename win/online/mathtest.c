@@ -16,6 +16,11 @@ void roam_keys_tap(unsigned d, int h){ (void)d; (void)h; }
 /* (mprace_win.c's quit notices: vsock.c and mprace.c are not linked here) */
 int vs_session_active(void){ return 0; }
 const char *roam_opt(const char *n){ (void)n; return 0; }
+int roam_win_file_read(const char *e, char *b, int c){ (void)e; (void)b; (void)c; return -1; }
+int roam_win_file_write(const char *e, const char *b, int n){ (void)e; (void)b; (void)n; return 0; }
+uint64_t roam_win_filetime_now(void){ return 0; }
+uint64_t roam_win_save_mtime(const char *n, char *w, int c){ (void)n; (void)w; (void)c; return 0; }
+void roam_game_note(const char *t, int ms){ (void)t; (void)ms; }
 int vs_rt_send(uint16_t p, uint32_t i, const void *m, int n){ (void)p; (void)i; (void)m; (void)n; return -1; }
 int vs_rt_recv(uint16_t p, uint32_t *i, void *m, int c){ (void)p; (void)i; (void)m; (void)c; return -1; }
 int vs_race_peers(uint32_t *i, int m, uint32_t w){ (void)i; (void)m; (void)w; return 0; }

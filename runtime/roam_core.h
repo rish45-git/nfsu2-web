@@ -68,6 +68,9 @@
 /* ...and in the same byte (a core before it reads only RC_OPEN_ALL): the car's headlights are on high beam (lightkey.c),
  * sent as the open parts are, in the longest form */
 #define RC_OPEN_HIBEAM   0x10
+/* ...and (same byte, older cores ignore it): the car is driven by its game's AI while its player is away (the plugin's
+ * AFK bot, roam_game.c afk_frame); friends' name tags say so */
+#define RC_OPEN_BOT      0x20
 #define RC_SLIP_STEP     0.5f       /* a wheel's slip on the wire: int8 steps of this (m/s), up to 63.5 */
 #define RC_BUF_STATES    32         /* jitter buffer per peer */
 #define RC_OFFWIN        64         /* clock-offset samples per peer */
@@ -371,6 +374,7 @@ typedef struct {
                                               recordings (GIN) and the engine model under them (the AEMS bank) */
     uint8_t  open;                 /* the car's open parts (RC_OPEN_*: hood, trunk, doors), 0: none */
     uint8_t  hibeam;               /* its headlights are on high beam (RC_OPEN_HIBEAM, in the open parts' byte) */
+    uint8_t  bot;                  /* its player is away and the game's AI drives it (RC_OPEN_BOT, the same byte) */
 } rc_state;
 /* one state as a SNAP carries it (RC_STATE_BYTES, then with ext its extension as RC_HF_STATEX's), for another
  * channel's messages (racecars.c: the cars of a race between players); get: RC_OK / RC_E_* */
@@ -517,7 +521,7 @@ typedef struct {
     uint8_t slipx, surf[4];        /* as rc_state: slip 0 when no wheel slides */
     float   slip[8];
     float   eng, eng_acc, eng_dcl, eng_base;   /* as rc_state (the volumes 0 .. 1): eng 0 when the sender sent no engine */
-    uint8_t open, hibeam;          /* as rc_state */
+    uint8_t open, hibeam, bot;     /* as rc_state */
     int     mode;                  /* RC_MODE_* */
 } rc_pose;
 enum { RC_MODE_NONE = 0, RC_MODE_INTERP = 1, RC_MODE_EXTRAP = 2, RC_MODE_HOLD = 3 };

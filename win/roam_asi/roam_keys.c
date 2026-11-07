@@ -48,6 +48,7 @@ static int              g_mu_ok;
 static struct { uint8_t dik, down; int wait; } g_q[TAPS];
 static int g_qn;
 static uint32_t g_taps, g_unmapped, g_muted_events;
+static volatile DWORD g_player_at;           /* GetTickCount of the player's last key event (muted ones too), 0 none */
 
 /* the system keyboard: GUID_SysKeyboard {6F1D2B61-D5A0-11CF-BFC7-444553540000} */
 static const uint8_t SYSKBD[16] = { 0x61, 0x2B, 0x1D, 0x6F, 0xA0, 0xD5, 0xCF, 0x11, 0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00 };
@@ -95,6 +96,7 @@ static long __stdcall hk_getdata(void *self, DWORD cb, uint8_t *rg, DWORD *inout
     if (self != g_dev || !inout) return g_gdd(self, cb, rg, inout, flags);
     DWORD want = *inout;
     long r = g_gdd(self, cb, rg, inout, flags);
+    if (r >= 0 && *inout && !(flags & DIGDD_PEEK)) g_player_at = GetTickCount();   /* (the game's own events: ours come after) */
     if (!g_mu_ok) return r;
     EnterCriticalSection(&g_mu);
     if (r >= 0 && g_mute){                                          /* the trip drives: the player's keys go nowhere */
@@ -145,6 +147,8 @@ static void hook_frame(void){
     g_vt = vt; g_dev = dev;
     roam_log("[keys] the game's keyboard (%p) hooked: GetDeviceData %p, SetActionMap %p\n", dev, (void *)g_gdd, (void *)g_sam);
 }
+/* the player's last key event: GetTickCount then, 0 none yet (the AFK bot, roam_game.c afk_frame) */
+uint32_t roam_keys_player_at(void){ return g_player_at; }
 int  roam_keys_ready(void){ return g_vt && g_vt != (void **)1 && g_dev; }
 /* a key press for the game (a DIK code), held for `hold` of its reads (frames) */
 void roam_keys_tap(unsigned dik, int hold){

@@ -608,11 +608,43 @@ static void pend_check(long f){
     }
     if (changed) pend_write();
 }
+/* ---- a one-time bonus into the career's bank (BonusCash = N in the .ini; a player's ask, 2026-11-07: only on the PC whose
+ * .ini says so) ----------------------------------------------------------------------------------------------------
+ * Given once per profile, in career free roam (the world up, no screen over it), the profiles that had it listed in
+ * <the .ini's name>.bonus (one name a line).  The bank is in the career in memory: the game's next save keeps it (a
+ * save before the game closes; the autosave at the next garage visit). */
+#define G_FLOW_MW       0x008654a4u   /* 6: in the world */
+static void bonus_frame(long f){
+    static int amount = -1; static long at;
+    if (amount < 0){ const char *o = roam_opt("NFSU2_ROAM_BONUSCASH"); amount = 0; for (const char *p = o; p && *p >= '0' && *p <= '9' && amount < 10000000; p++) amount = amount * 10 + (*p - '0'); }
+    if (!amount || f - at < 120) return;
+    at = f;
+    char pn[33]; live_profile(pn);
+    if (!pn[0] || rd(G_GAMEMODE) != 1u || rd(G_FLOW_MW) != 6u || career_fe_active("UI_CareerCrib.fng")) return;
+    char b[2048]; int n = roam_win_file_read("bonus", b, sizeof b);
+    if (n < 0) n = 0;
+    for (const char *s = b; s < b + n; ){
+        const char *e = s; while (e < b + n && *e != '\n' && *e != '\r') e++;
+        if ((int)(e - s) == (int)strlen(pn) && !strncasecmp(s, pn, (size_t)(e - s))){ amount = 0; return; }   /* (had it) */
+        s = e + 1;
+    }
+    uint32_t b0 = rd(G_CAREER + C_BANK);
+    MR32(G_CAREER + C_BANK) = b0 + (uint32_t)amount;
+    char line[48]; int k = snprintf(line, sizeof line, "%s\n", pn);
+    if (n + k < (int)sizeof b){ memcpy(b + n, line, (size_t)k); n += k; }
+    if (!roam_win_file_write("bonus", b, n)) roam_log("[mpcredit] the bonus list could not be written: the bonus may come again\n");
+    roam_log("[mpcredit] f=%ld %s: a one-time bonus of $%d (BonusCash): bank $%u -> $%u (save the career to keep it)\n", f, pn, amount, b0, b0 + (uint32_t)amount);
+    void roam_game_note(const char *t, int ms);
+    char t[96]; snprintf(t, sizeof t, "Bonus: $%d added to your bank. Save your career to keep it", amount);
+    roam_game_note(t, 8000);
+    amount = 0;
+}
 /* per frame: the sponsor question and the movie of a win; the kept wins; a waiting win in the crib, once it took its
  * snapshot of the profile (180 frames at most) */
 void mpcredit_frame(struct CPU *c){
     (void)c;
     if (!g_pend.loaded) pend_load();
+    bonus_frame(roam_win_frame_no());
     /* the sponsor question and the movie of a win; a question or a movie whose crib went away is dropped */
     if (g_ui.st != UI_NONE){
         int gone = rd(G_GAMEMODE) != 1u || ((g_ui.st == UI_OFFER || g_ui.st == UI_ASKED || (g_ui.st == UI_WAIT && !g_ui.leaving))
