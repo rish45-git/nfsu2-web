@@ -339,7 +339,7 @@ the distance-based send rate and the hub's range, not a fault; a little hysteres
 the desktop (100.76.38.37); the server runs with `NFSU2_HOST=192.168.0.109,100.76.38.37` (banner: names localhost,
 192.168.0.109, 100.76.38.37; started `nohup setsid bash win/online/wsl-server.sh run`, its output in WSL
 `~/nfsu2-server.log`); win/online/tailscale-setup.ps1 (the port proxy and firewall rule) to run as administrator; the
-friends' pack in C:\devriends-pack (not in the repo: it has the player's mods).
+friends' pack in C:\dev\friends-pack (not in the repo: it has the player's mods).
 - The way in: a VPN, not the router (a forwarded port would put the plain-ws server on the open internet, with no
   encryption). Tailscale: the desktop and each friend install it; the desktop's machine is shared with each friend's
   account (Tailscale's "Share", which gives them that one machine, not the home network); the desktop has a
