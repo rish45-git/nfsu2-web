@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `3c1247d1` (fix phases 3-4's log lines). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `3c1247d1` (fix phases 3-4's log lines). The desktop runs `3c1247d1` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -95,8 +95,9 @@ reads this file first:**
    prints the race's own margin (", the career's" when it counts). The career's credit always had the real one. The
    "points" are the drift score (+0x104): they rank a drift only, the others go by the times (09:17: 294.51 s ahead
    of 300.88 s, right); the row lines now mark them "(drift only)" in the other races. Build 3c1247d1.
-5. **Fix phase 5 (Opus): CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
-   "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
+5. **Fix phase 5 (Opus): CareerCatchUp in a career race: DONE (12:02).** A solo career circuit (Patrick's, the
+   card's Accept, then the plugin's Solo): "12:02:37 career race: catch-up off (CareerCatchUp = 0)" as the race
+   started (build 3c1247d1): the race option [0x89E7F8], the game's rubber band, cleared. Quit right after.
 6. **Fix phase 6 (Opus): Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
    CreateDevice failing on the laptop with its screen asleep).
 7. **Fix phase 7 (Opus): Ideas from players' complaints:**
