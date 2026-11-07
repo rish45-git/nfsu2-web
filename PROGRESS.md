@@ -261,11 +261,27 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       **The race's side, not built:** the game's LAN car description (0x5F0320, thiscall (ride, the bit writer, with
       parts); its callers 0x5876A1 and 0x5FE5B4 always pass 1) writes 0xAA and the parts, or with the third argument
       0 a count of 0; its decoder (0x5F04D0) takes a count of 0 as stock parts (0x637040(0) on the ride, 0x5F0625).
-      **Built, off by default: AddOnStockRace = 1** (guards_win.c addon_race_install, build c212de5c) hooks 0x5F0320
+      **Built, off by default: AddOnStockRace = 1** (on on the desktop since 07:58, its install logged; 0 on the stick) (guards_win.c addon_race_install, build c212de5c) hooks 0x5F0320
       (83 EC 14 53 55): a ride of type 46..255 gets its third argument cleared, so it goes with no parts; counted in
       the log. The stub's bytes checked by disassembly; not run in a race yet. To try with the laptop: AddOnStockRace = 1
       on the desktop, a two-PC race, does the laptop see the SENTRAB12 whole. A client might show its own add-on car
       stock in a race the other PC hosts, if it rebuilds its own car from the host's records.
+    - **0x5F0320's other caller (0x587630, from 0x5876A1)** writes the description as hex ("%02X%03X") under key "C" of
+      the online lobby's player info: network only, not the save, so AddOnStockRace cannot change the saved car.
+    - **Soak (07:32-07:57, build 291fdcad):** 25 minutes in free roam with 3 roambots (NSX91, room RishiCrew) on the
+      desktop, the game mostly behind other windows (30 fps): 3 friends throughout, no LEAVE, no fault, no re-sync,
+      frame cost 0.1 ms, SPEED2's memory 836 -> 870 MB, level from 07:49. (The bots drive a fixed circle at one height
+      through walls and planters: a test tool's, not the game's.)
+    - Not done: CareerCatchUp in a career race (Rishi was on the desktop with another game in front from 07:58).
+    - **The morning's list (with Rishi and the laptop):**
+      1. The laptop: the stick's build c212de5c (backup, copy, sha256sum -c), its game started with its screen awake
+         (07:27 it failed to make its D3D9 device unattended).
+      2. Free roam side by side (F9): does the laptop see the desktop's SENTRAB12 whole (AddOnStockLook)?
+      3. A race of the two (the desktop has AddOnStockRace = 1): the SENTRAB12 whole on the laptop? The log's
+         "[guard] AddOnStockRace: ... (N so far)" on the desktop; the desktop's own car as before.
+      4. Alt-tab on either PC in free roam: the other keeps the friend (RunInBackground), no "seems away".
+      5. Which cutscene was missing in the solo race (before the race, after the win, or a stage end)?
+      6. CareerCatchUp: a career race, the log's "career race: catch-up off".
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;
