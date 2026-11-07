@@ -64,6 +64,53 @@ Everyone who plays from the same server can meet in free roam.
 The same tree still builds the native macOS version
 (`./gen.sh`, `./build.sh && ./link.sh`, `./run.sh`).
 
+## The native PC plugin (branch `native-online`)
+
+`NFSU2FreeRoam.asi` lets the original PC game (`SPEED2.EXE` v1.2 NA, unmodified, through the Ultimate ASI Loader)
+play free-roam multiplayer with friends on this project's server, and race them in the game's own LAN races. It
+changes the game only in memory. The detailed log, with every address and what was tried, is
+[`PROGRESS.md`](PROGRESS.md). The player's guide that goes to the second PC is `laptop-update/README.md` (copied there
+with the build; not in this repo).
+
+**What it does (2026-11-07):**
+
+- Free roam with friends: their cars, names, minimap arrows, doors and lights; F9 jumps next to a friend.
+- Race lobbies from the career's race starts: Enter opens one, J joins from afar. A LAN race trip takes everyone
+  there and back to free roam afterwards.
+- AI racers in multiplayer races (`AiRacers = 2`, named Claude, ChatGPT, Gemini and DeepSeek): stock cars, rated a
+  little above the best player's, top skill. They finish with their own times, and the results come in race order.
+- No rubber band in multiplayer or career races (`CatchUp = 0`, `CareerCatchUp = 0`).
+- F7 fast-travels to the GPS destination, or with no GPS set, to the nearest race start.
+- An AFK bot drives your car after 30 s without input (`AfkBot = 30`), and a race bot keeps the route.
+- The game keeps running with its window behind others or minimized (`RunInBackground = 1`), at 30 fps there
+  (`BackgroundFps = 30`), so friends don't time out when you switch windows.
+- Your Unlimiter add-on car (like the SENTRAB12) goes to friends with stock parts (`AddOnStockLook = 1`), since their
+  games drew it with its own parts as only a name tag. `AddOnStockRace = 1` does the same in LAN races (built, not
+  tried in a race yet).
+- Guards for crashes of the game's own that the plugin's paths bring out (a sound bank that's gone).
+
+**Build and check** (Windows, MSYS2's mingw32):
+
+```sh
+PATH="/c/msys64/mingw32/bin:$PATH" bash tools/build_roam_asi.sh       # -> out/win/NFSU2FreeRoam.asi
+.venv/Scripts/python -I -X utf8 tools/asi_check.py out/win/NFSU2FreeRoam.asi "C:/Games/NFSU2-online/SPEED2.EXE"
+PATH="/c/msys64/mingw32/bin:$PATH" bash win/online/build_probe.sh      # -> out/win/roambot.exe (test players)
+```
+
+Install: copy the `.asi` and `win/roam_asi/NFSU2FreeRoam.ini` into the game's `scripts\` folder. The server runs in
+WSL (`win/online/wsl-server.sh`, port 8691). `roambot.exe ws://127.0.0.1:8691/lan synth:NAME:HASH n x y z seconds
+ROOM radius` adds test players. They drive a fixed circle at one height and go through walls.
+
+**Rules:**
+
+- No EA game file is ever committed or uploaded.
+- `SPEED2.EXE` is never modified.
+- Test in `C:\Games\NFSU2-online`.
+- Start the game once (`Start-Process`), never with computer use's `open_application`: it starts a new copy every
+  time.
+
+**Where to resume:** see "Where to resume" at the top of [`PROGRESS.md`](PROGRESS.md).
+
 ## Credits
 
 Based on Talha Müderrisoğlu's [NFSU2Recomp](https://github.com/TalhaMudo/NFSU2Recomp) (its MIT version, see the

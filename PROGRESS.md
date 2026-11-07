@@ -8,6 +8,42 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
+## Where to resume (2026-11-07 08:45)
+
+**State:**
+
+- **Builds:** the repo builds `1555ce8c` (b855280c, the hotkey AFK fix on top). The desktop runs `c212de5c` with
+  `AddOnStockRace = 1`. The laptop installed `c212de5c` from the stick at about 08:05 (its session did it on Rishi's
+  OK). The stick (`laptop-update`, also in `C:\dev\laptop-update`) is in the laptop and holds `c212de5c`.
+- **Everything is pushed** to `fork/native-online` (rish45-git/nfsu2-web).
+- **The desktop's game ended at 08:35:08**, right after a key with its window in front. The log has no "unloaded"
+  line and there's no new crash dump: closed by hand? Ask Rishi.
+- **Remote Control:** this session can't turn it on (HTTP 403 every time, also after an app restart and with the
+  other desktop sessions' Remote Control off). So the laptop's session gets this session's messages but can't
+  answer them. Rishi relays, or a new session tries. Not caused by telemetry variables: none are set. Public
+  reports of the same 403 name no fix.
+- **Remote Control turned off during that test:** the desktop sessions "Phase 3: Virtual Winsock for Online lobby"
+  and "NFSU2 native client to Underground 2 Revived server". The app won't turn it back on until each runs a turn.
+
+**Next, in order:**
+
+1. **Item 7, the look:** does the laptop draw the desktop's SENTRAB12 whole in free roam now (AddOnStockLook)?
+   Asked of the laptop's session at 08:09; its answer can't reach this session. Then a two-PC race for
+   AddOnStockRace: the SENTRAB12 whole on the laptop? Watch the desktop's log for "[guard] AddOnStockRace: ... (N so
+   far)".
+2. **Install `1555ce8c`** on both PCs. A plugin hotkey (F7, F9, J) now gives the car back from the AFK bot.
+3. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet.
+4. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
+5. **Open bugs:**
+   - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
+   - the 0x1D2780 start crash (D3D9 CreateDevice failing on the laptop with its screen asleep);
+   - the bots following the GPS (item 4: the game's AI ignores the GPS, so it needs a driver of our own).
+6. **Ideas from players' complaints, not done:**
+   - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
+     0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
+     Needs a race win to test;
+   - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
+
 ## The exe
 
 `C:\Games\NFSU2\SPEED2.EXE`: 4,800,512 bytes, SHA-256 `f9dd86c0…24168a7`, the NA v1.2 the README requires
