@@ -10049,6 +10049,19 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
     int racing = mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && ok(race, 0x28) && MR32(race) == 4u &&
                  (drv == 1u || g_afk_on);
     int can = roamok || racing;
+    /* No catch-up in a multiplayer race from free roam (CatchUp = 0, the default; the player's ask, 2026-11-07: "make
+     * sure these bots are ruthless"): the race option [0x89E7F8] is the game's rubber band -- with two player cars
+     * 0x5F6740 sets each one's torque, governor and grip from the gap (vehicle +0x468), and the AI reads it too
+     * (0x4084B9, 0x41757B) -- so whoever leads, bot or player, was held back.  Off while the race runs, each frame (the
+     * game sets it from the race's options at its start) */
+    {
+        static int cu = -1;
+        if (cu < 0){ cu = env_int("NFSU2_ROAM_CATCHUP", 0, 0, 1); rlog("[roam] multiplayer races: catch-up %s\n", cu ? "the game's" : "off"); }
+        if (!cu && mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && rd32(0x0089e7f8u)){
+            MR32(0x0089e7f8u) = 0;
+            rlog("[roam] f=%ld multiplayer race: catch-up off (CatchUp = 0)\n", rh_frame());
+        }
+    }
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
     /* (what the race's bot waits for, every 10 s of a race while it does not drive: the first live test, 2026-11-07
      * 02:41, a drag race, sat 40 s idle and it never came) */
