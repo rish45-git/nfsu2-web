@@ -190,6 +190,14 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   - The race AFK bot (commit feba7c8e, build 92e95660…) and `ForceStockPartsOnAddOnOpponents = 1` are installed on the
     desktop (02:30; backups out/win/backup/*.before-racebot, *.before-forcestock) and on the USB stick for the laptop;
     the laptop keeps `AllNewCarsInitiallyUnlocked = 0`. Not tried yet.
+  - **To do, the player's ask (02:48): bots follow the game's GPS.** When a player sets a GPS destination on the map,
+    the bots drive there along its route. Asked: "if I set a gps all bots follow to that gps too", so the
+    destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
+    GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
+    extension).
+  - **The race bot never took over in the 02:40 drag race** (both PCs; their free-roam bots did): the diagnostic line
+    (commit 8aa678c7, not installed yet) says why. Also: the joiner's way back took 34 s, six "Connecting to
+    lobby..." waits after the host had left the LAN game; a faster way out is to do.
   - **The free-roam bot drives badly** (the player, 02:27): into walls and traffic. The game's autopilot has no route
     in free roam. Next: give it a free-roam AI racer's "cruise the city" job (the encounter racers drive the roads
     well), and as a quick test the traffic driver (0x5EBA30 with 4).
