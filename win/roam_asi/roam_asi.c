@@ -473,6 +473,7 @@ uint64_t roam_win_ns(void){
 static uint32_t g_world_last;
 static void server_dll_watch(void);         /* (below, with the LoadLibraryA hook) */
 void mprace_win_net_frame(void);              /* mprace_win.c: the race's quit notices */
+void guards_win_frame(void);                    /* guards_win.c: the crash guards' counts */
 void roam_asi_frame(void){
     if (g_dead || !g_ready) return;
     __asm__ volatile ("stmxcsr %0" : "=m"(g_game_mxcsr));
@@ -489,6 +490,7 @@ void roam_asi_frame(void){
     roam_keys_frame();                            /* the hotkeys; the game's keyboard hooked (roam_keys.c) */
     mprace_frame(0);                              /* a race trip from free roam (runtime/mprace.c), its career win */
     mprace_win_net_frame();                       /* its quit notices from the race's other games (mprace_win.c) */
+    guards_win_frame();                           /* the crash guards' counts (guards_win.c) */
     mpcredit_frame(0);
     roam_keys_mute(mprace_owns_input());          /* (the trip drives the game's menus: the player's keys wait) */
     roam_game_frame(0);
@@ -771,6 +773,7 @@ static void online_setup(void){
 }
 
 void showoff_win_install(void);                  /* showoff_win.c */
+void guards_win_install(void);                   /* guards_win.c */
 /* ---- start-up ---------------------------------------------------------------------------------------- */
 static void init_once(void){
     if (g_inited) return;
@@ -798,6 +801,7 @@ static void init_once(void){
     if (!hook_install()) return;
     g_hud_on = hud_install();
     if (opt_int("NFSU2_ROAM_SHOWOFF", 1)) showoff_win_install();   /* friends' cars' own open parts (showoff_win.c) */
+    guards_win_install();                           /* the game's own crash a gone sound bank makes (guards_win.c) */
     {
         const char *k = roam_opt("NFSU2_ROAM_SERVERKEY");
         int vk = roam_keys_vk(k);
