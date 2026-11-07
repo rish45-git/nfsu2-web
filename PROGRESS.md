@@ -14,7 +14,7 @@ says native clients are welcome there.
 
 - **Builds:** the repo builds `78134ee9` (e151c1e5). The desktop runs `78134ee9` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
-  laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 0`. The stick
+  laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
 - **Remote Control works** in this session (2026-11-07 08:45 chat): the laptop's session answers by SendMessage.
 - **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy on 8691 did not
@@ -71,9 +71,12 @@ phases 0-6 below). Opus on high for phases 1-8; Fable for 9 and 10, the hardest 
 GPS driver of our own), or for any phase Opus circles on twice. Rishi starts a new chat with Fable for those: it
 reads this file first:**
 
-1. **Fix phase 1 (Opus): Bots on the laptop, a retest:** with `AiRacers = 2` the laptop fell to ~2.5 fps at the race load and the host
-   called the race off (09:06, and 06:03), so it runs `AiRacers = 0`. That was before 6038e3ff/bba7aad4 (the AI
-   racers' cars are now loaded with the players'): one race with the laptop on `AiRacers = 2` tells if that fixed it.
+1. **Fix phase 1 (Opus): Bots on the laptop, a retest: DONE (11:27).** The laptop on `AiRacers = 2` (825c3aa1):
+   the race started, the host did not call it off; ~26-41 fps in its first 30 s (976 frames; the 09:06 try had 68-77
+   a 30 s); its 2 AI racers (Miatas, grid places 3-4 after the move) drawn on its grid. So the AI cars' loading fix
+   (6038e3ff/bba7aad4) cured the stall too. The laptop keeps `AiRacers = 2`. Seen: Rishi's preset Supra races as
+   class 0, rating 585.1, 516 hp (the others ~180): the balance's -25 % at most leaves it far ahead; on the laptop
+   the "Rishi" tag far ahead showed no car under it at that distance (not checked closer).
 2. **Fix phase 2 (Opus): The trip stalls in the background:** a joiner's LAN-menu steps ("the career car" -> "join the game") wait while
    its window is behind another (the laptop, 57 s, 09:49), with RunInBackground on; the host waits or gives up.
 3. **Fix phase 3 (Opus): The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
