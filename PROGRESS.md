@@ -28,7 +28,20 @@ says native clients are welcome there.
 - **The stick and C:\dev\laptop-update hold d1fed18c** (sums verified, 50 files); the laptop still runs 825c3aa1
   until Rishi OKs the install in the laptop session. The desktop runs d1fed18c with AddOnStockLook = 0 still (set it
   to 1 now that the crash is fixed). ModelCheck = 1 on the desktop.
-- **Next (Rishi's task 4): fix phase 8 in a real race** (desktop hosting, laptop joining, both on d1fed18c): a human
+- **Done, task 4: fix phase 8 checked in real two-PC races (17:03-17:38, five races, no crash on either PC, the laptop on
+  d1fed18c, the desktop on cb96377c at the end).** Races 1-2: the AI racers led throughout (the race balance rates every
+  car ~480; bot against bot is even), so the rule stayed quiet. Races 3-5 with NFSU2_ROAM_TEST_RISE=1 on the desktop: a
+  set every 5 s up to the test's 6 (torque 447 -> 596 N m, grip 1.30 -> 1.90). The undo never logged (the race's state
+  stays 4 through the results and the race object goes with the world): 272c4982 takes the sets off when every racer
+  is done ("the race is over (everyone finished; state 4, flow 6), the AI racers' sets taken off", race 5). In race 5
+  the laptop's own AI (the real rule, d1fed18c) rose because Rishi's bot-driven Supra led: set 1 at 15.2 / 16.8 s
+  behind, a set every 5 s up to 21 and 22 sets (torque 249 -> 643 N m, grip 4.30), "AI racer 100 overtook the leading
+  human with 21 set(s): no more, kept"; the fall-back restart was not seen (the AI stayed ahead). The gap measure jumps
+  across laps ("closed -32.5 s in 5 s"), and 20+ sets make the physics silly (-3 km/h, grip 4): a cap or smaller steps
+  is worth asking Rishi about, with his add-up / multiply question. C:\dev\laptop-update holds cb96377c (the stick is
+  in the laptop, not updated yet). Lesson: the host must not quit its game before the other PC has finished (race 2 was
+  cut 0.01 lap from the laptop's line that way).
+- **Next, Rishi's call:** sets add up (now) or multiply, and a cap; then the stick gets cb96377c when it is back. (desktop hosting, laptop joining, both on d1fed18c): a human
   leads by 15 s, the log's "[ai] rising:" lines, the stop after an overtake, the restart at 15 s behind, "sets taken
   off" at the end; ask Rishi whether sets should add up (now) or multiply.
 
