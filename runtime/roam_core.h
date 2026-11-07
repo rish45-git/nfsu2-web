@@ -605,6 +605,9 @@ typedef struct {
     char     flag[RC_FLAG_MAX + 1];  /* the flag before our name ("" none): HELLO, to the peers */
     uint8_t  platform;
     int      discovery;            /* beacon through io.broadcast every 2 s */
+    int64_t  crew_grace_us;        /* a crew-mate the hub has not listed for this long goes (0: T_HUB_GRACE, as anyone;
+                                      the Windows plugin's 30 s: at the edge of the hub's range a crew-mate came and went
+                                      about once a minute) */
     int      test_mode;            /* only 127/8 peers are accepted */
     int      max_players;          /* 2 .. RC_MAX_PLAYERS */
     int      rate_hz;              /* snapshots per second (10 .. 60) */

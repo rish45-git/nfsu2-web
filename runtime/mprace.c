@@ -262,6 +262,7 @@ static struct {
     float    rep_factor;                           /* our engine power's factor (1: as it was) */
     uint32_t room[10];                             /* the host's room as last logged */
     long     ready, dlg_at, wait_at, join_at;
+    int      calloffs;                             /* the way back's "please wait"s called off so far */
     long     held;                                 /* the way back's time so far, while the player is not deciding */
     char     keys[16]; int nkeys; long key_at;     /* keys to press, one every 20 frames: L LEFT, R RETURN, E ESCAPE */
     char     why[96];
@@ -1080,6 +1081,7 @@ static void pay(CPU *c, int in_roam, const char *where){
                         autotest_frame(), M.prize, career, top, b, b + (uint32_t)top);
             }
             M.topup = top; M.prize = 0;
+            if (top > 0) mpcredit_topup(M.r.credit, top);                /* (kept with the win: paid again if it is) */
             return;
         }
     }
@@ -1918,7 +1920,15 @@ static void step_back(CPU *c, long f){
         int cancel = nb == 1 && (rd(G_DLG_MSG3) == MSG_LOOK_CANCEL || rd(G_DLG_LABEL3) == LBL_CANCEL);
         if (nb == 0 || cancel){
             if (!M.wait_at){ M.wait_at = f; mlog("a \"please wait\" on the way back: \"%s\"", t); }
-            if (cancel && f - M.wait_at > 60 * 5){ mlog("... called off%s", ""); dlg_answer(rd(G_DLG_MSG3)); M.wait_at = 0; M.next = f + 30; }
+            /* the first after 5 s; once one was called off and the game tried again (a joiner whose host had left the
+             * LAN game: 6 and 11 rounds of "Connecting to lobby..." then "connection lost", 34 and 64 s, 2026-11-07),
+             * each next one after half a second */
+            long after = M.calloffs ? 30 : 60 * 5;
+            if (cancel && f - M.wait_at > after){
+                M.calloffs++;
+                fprintf(stderr, "[mprace] f=%ld ... called off (%d)\n", autotest_frame(), M.calloffs);
+                dlg_answer(rd(G_DLG_MSG3)); M.wait_at = 0; M.next = f + (M.calloffs > 1 ? 10 : 30);
+            }
 #ifdef ROAM_HOST_WIN
             /* one with no button that does not end: Esc, every 5 s from 15 s on (a host whose player left the results
              * before the joiner did sat on "Starting Game Session..." for good, its game waiting for a next session the

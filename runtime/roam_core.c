@@ -1812,7 +1812,8 @@ void rc_tick(rc_session *s, int64_t now){
         if (p->last_rx_us && now - p->last_rx_us > T_DROP){ drop_peer(s, i, "timeout", RC_DGONE_SILENT); continue; }
         /* lists keep coming without it (a silent hub drops nobody); our outrun's other player stays (rc_set_duel: a
          * crowd nearer than it, or the hub's busy cap, ended the outrun as a win on both screens) */
-        if (hub && s->hub_heard_us && !p->configured && s->hub_heard_us - p->hub_listed_us > T_HUB_GRACE && !(s->duel_with && p->id == s->duel_with)){
+        int64_t grace = s->conf.crew_grace_us > T_HUB_GRACE && rc_peer_crew(s, i) >= 0 ? s->conf.crew_grace_us : T_HUB_GRACE;
+        if (hub && s->hub_heard_us && !p->configured && s->hub_heard_us - p->hub_listed_us > grace && !(s->duel_with && p->id == s->duel_with)){
             drop_peer(s, i, "out of range", 0); continue; }
         if (!p->last_rx_us && !p->configured && now - p->added_us > T_GOSSIP_FORGET){ peer_clear(p, 0); continue; }
         if (p->state == RC_PS_EST && now - p->last_rx_us > T_LOST && !p->lost){

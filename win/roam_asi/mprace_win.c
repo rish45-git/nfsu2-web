@@ -487,7 +487,7 @@ uint64_t roam_win_filetime_now(void);
 uint64_t roam_win_save_mtime(const char *name, char *where, int cap);
 #define PEND_MAX        32
 #define G_P1_NAME       0x0083a9e0u   /* player 1's profile (FEDatabase +0x10): its name, 32 bytes, first */
-typedef struct { char prof[33]; uint32_t hash; float margin; uint8_t given; uint64_t at; } Pend;
+typedef struct { char prof[33]; uint32_t hash; float margin; uint8_t given; uint64_t at; int topup; } Pend;   /* topup: the place's money on top */
 static struct { Pend e[PEND_MAX]; int n, loaded; long since, check_at; } g_pend;
 static void live_profile(char out[33]){
     unsigned i = 0;
@@ -508,8 +508,8 @@ static void pend_write(void){
     char b[PEND_MAX * 96 + 8]; int n = 0;
     for (int i = 0; i < g_pend.n; i++){
         const Pend *e = &g_pend.e[i];
-        n += snprintf(b + n, sizeof b - (size_t)n, "%c\t%s\t%08x\t%08x\t%08x%08x\n", e->given ? 'G' : 'W', e->prof, e->hash, fbits(e->margin),
-                      (uint32_t)(e->at >> 32), (uint32_t)e->at);
+        n += snprintf(b + n, sizeof b - (size_t)n, "%c\t%s\t%08x\t%08x\t%08x%08x\t%08x\n", e->given ? 'G' : 'W', e->prof, e->hash, fbits(e->margin),
+                      (uint32_t)(e->at >> 32), (uint32_t)e->at, (uint32_t)e->topup);
         if (n >= (int)sizeof b - 1) break;
     }
     if (!roam_win_file_write("wins", b, n)) roam_log("[mpcredit] the waiting wins' file could not be written: they are in memory only\n");
@@ -532,7 +532,9 @@ static void pend_load(void){
             if (p < eol && *p == '\t'){ p++; const char *q = p; uint32_t hi = 0, lo = 0;
                 for (int d = 0; d < 8 && q < eol; d++) { char t[2] = { *q++, 0 }; const char *tp = t; hi = hi << 4 | hexu(&tp); }
                 for (int d = 0; d < 8 && q < eol; d++) { char t[2] = { *q++, 0 }; const char *tp = t; lo = lo << 4 | hexu(&tp); }
-                e.at = (uint64_t)hi << 32 | lo; }
+                e.at = (uint64_t)hi << 32 | lo;
+                p = q;                                         /* (a sixth field, the place's money on top: newer files) */
+                if (p < eol && *p == '\t'){ p++; e.topup = (int)hexu(&p); if (e.topup < 0 || e.topup > 100000) e.topup = 0; } }
             if (e.prof[0] && e.hash) g_pend.e[g_pend.n++] = e;
         }
         s = *eol ? eol + 1 : eol;
@@ -573,6 +575,14 @@ int mpcredit_win(struct CPU *c, uint32_t race, float margin, int in_roam){
     int ok = win_now(race, margin);
     if (ok) pend_given(race, margin);
     return ok;
+}
+/* mprace.c pay: the place's money it paid on top for race's win, kept with the win (the G line) */
+void mpcredit_topup(uint32_t race, int amount){
+    char pn[33]; live_profile(pn);
+    int i = pn[0] && amount > 0 && race_in_table(race) ? pend_find(pn, MR32(race + 8u)) : -1;
+    if (i < 0) return;
+    g_pend.e[i].topup = amount;
+    pend_write();
 }
 int mpcredit_pending(void){
     char pn[33]; live_profile(pn); int n = 0;
@@ -673,7 +683,14 @@ void mpcredit_frame(struct CPU *c){
         pend_drop(w); pend_write(); return;
     }
     roam_log("[mpcredit] f=%ld the waiting win of %s, in the crib\n", f, race_name(r));
-    if (win_now(r, e.margin)) pend_given(r, e.margin);
+    if (win_now(r, e.margin)){
+        pend_given(r, e.margin);
+        if (e.topup > 0){                                  /* (a win given before: the place's money on top again too) */
+            uint32_t b0 = rd(G_CAREER + C_BANK);
+            MR32(G_CAREER + C_BANK) = b0 + (uint32_t)e.topup;
+            roam_log("[mpcredit] f=%ld %s: the place's money on top again, $%d ($%u -> $%u)\n", f, race_name(r), e.topup, b0, b0 + (uint32_t)e.topup);
+        }
+    }
     else { pend_drop(w); pend_write(); }
 }
 

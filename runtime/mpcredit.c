@@ -629,6 +629,7 @@ int mpcredit_win(CPU *c, uint32_t race, float margin, int in_roam){
     return ok;
 }
 int mpcredit_pending(void){ return g_pend.n; }
+void mpcredit_topup(uint32_t race, int amount){ (void)race; (void)amount; }
 
 /* per frame: the sponsor question and the movie of a win (ui_frame); the waiting wins in the crib, one at a time
  * (each with its own question and movie), once the crib took its snapshot of the profile (180 frames at most: the

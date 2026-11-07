@@ -22,6 +22,9 @@ typedef struct { uint32_t race, sponsor; int prize, points, stage_from, stage_to
 int mpcredit_last(MpCredit *o);
 /* wins wait for the next crib (kept beside the profile, MPWINS.DAT, until a save of it has them) */
 int mpcredit_pending(void);
+/* the place's prize money paid on top of the career's prize for race's win (mprace.c pay): the plugin keeps it with
+ * the win, so a win given again after a load without it pays it again too; the port's: nothing */
+void mpcredit_topup(uint32_t race, int amount);
 /* garage.c (fileio.c's): the game wrote a profile, or deleted one (its host path): the waiting wins' file follows */
 void mpcredit_profile_written(const char *path);
 void mpcredit_profile_deleted(const char *path);

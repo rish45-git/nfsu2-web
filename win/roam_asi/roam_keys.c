@@ -93,7 +93,13 @@ static long __stdcall hk_setmap(void *self, void *fmt, const char *user, DWORD f
     return r;
 }
 static long __stdcall hk_getdata(void *self, DWORD cb, uint8_t *rg, DWORD *inout, DWORD flags){
-    if (self != g_dev || !inout) return g_gdd(self, cb, rg, inout, flags);
+    if (self != g_dev || !inout){
+        /* the game's other devices of this class (its controller, its mouse) read through here too: their events count as
+         * the player's for the AFK bot (roam_keys_player_at), so a controller's player is here, and takes the car back */
+        long r0 = g_gdd(self, cb, rg, inout, flags);
+        if (r0 >= 0 && inout && *inout && !(flags & DIGDD_PEEK)) g_player_at = GetTickCount();
+        return r0;
+    }
     DWORD want = *inout;
     long r = g_gdd(self, cb, rg, inout, flags);
     if (r >= 0 && *inout && !(flags & DIGDD_PEEK)) g_player_at = GetTickCount();   /* (the game's own events: ours come after) */

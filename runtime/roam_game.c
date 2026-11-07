@@ -8610,6 +8610,9 @@ static void init_once(CPU *c){
     snprintf(O.room, sizeof O.room, "%s", rm ? rm : "");
     rc_config cf; memset(&cf, 0, sizeof cf);
     cf.self_id = roam_plat_random(); cf.port = (uint16_t)port; cf.room = rc_room_hash(O.room);
+#ifdef ROAM_HOST_WIN
+    cf.crew_grace_us = 30000000;                  /* crew-mates stay 30 s past the hub's list (roam_core.h) */
+#endif
     crews_parse(opt("NFSU2_ROAM_CREW"), &cf);
     snprintf(cf.name, sizeof cf.name, "%s", O.name[0] ? O.name : "Player");
     /* our flag (the page's list; one this module does not have: none) */
