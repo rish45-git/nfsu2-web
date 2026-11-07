@@ -10041,6 +10041,15 @@ void roam_game_frame(CPU *c){
 #if MPRACES
         meet_stay(w, host);
         meet_gps(c);
+        {   /* the GPS's state as it changes (fix phase 10's diagnosis: the map's activation did not show as on) */
+            static uint32_t was = 0xffffffffu, wkey;
+            uint32_t on = MR8(G_GPS + 0x29u), key = MR32(G_GPS);
+            if (on != was || key != wkey){
+                rlog("[roam] f=%ld GPS %s, target key %08x at %.0f %.0f %.0f (+0x28 %u)\n", rh_frame(), on ? "on" : "off", key,
+                     (double)MRF32(G_GPS + 0x10u), (double)MRF32(G_GPS + 0x14u), (double)MRF32(G_GPS + 0x18u), MR8(G_GPS + 0x28u));
+                was = on; wkey = key;
+            }
+        }
 #endif
         /* a screen over the HUD: the HUD's update, which places the names
          * (roam_game_hud), does not run under the world map, and they stayed
@@ -10323,7 +10332,8 @@ static void afk_route(CPU *c, int64_t host, uint32_t race, uint32_t car){
  * R key does (Player::ResetCar), the AI off for it and on again 1.5 s later; at most once per 10 s.  Every 5 s a line:
  * its speed, the way it came, its hits (its speed down 25 km/h from one frame to the next), the GPS's target and the
  * road route's state (0x81CBC0: +0 0 none .. 3 done, +0x17A4 the car it routes for) */
-static struct { int64_t log_at, hit_at, slow_since, reset_at, re_on_at; float x, y, v, dist; int hits, n, resets; } g_afd;
+#define GPS_ARRIVE_M 40.f             /* the GPS bot counts as arrived this near the GPS target */
+static struct { int64_t log_at, hit_at, slow_since, reset_at, re_on_at, mark_at; float x, y, v, dist, mx, my; int hits, n, resets; } g_afd;
 static void afk_roam(CPU *c, int64_t host, uint32_t car){
     uint32_t pl = rd32(G_PLAYER1);
     if (!ok(car, 0x440) || !ok(pl, 0x60)) return;
@@ -10339,15 +10349,33 @@ static void afk_roam(CPU *c, int64_t host, uint32_t car){
         if (MR32(car + 0x24u) != 3u) rh_call(c, FN_AUTOPILOT_ON, pl, 0, 0, 0);
         rlog("[roam] f=%ld AFK in free roam: the AI drives again after the reset (driver %u)\n", rh_frame(), MR32(car + 0x24u));
     }
+    /* pinned: the wheels turn (the GPS bot's run of 2026-11-07 15:40: 30 km/h against a wall for a minute, the odometer
+     * counting) but the car has not moved 5 m in 8 s: the same reset */
+    float mdx = x - g_afd.mx, mdy = y - g_afd.my;
+    if (!g_afd.mark_at || mdx * mdx + mdy * mdy >= 25.f){ g_afd.mx = x; g_afd.my = y; g_afd.mark_at = host; }
     if (!g_afd.re_on_at){
+        int pinned = g_afd.mark_at && host - g_afd.mark_at >= 8000000 && host - g_afk.on_at >= 8000000;
         if (v >= 8.f || host - g_afk.on_at < 8000000) g_afd.slow_since = 0;
         else if (!g_afd.slow_since) g_afd.slow_since = host;
-        else if (host - g_afd.slow_since >= 5000000 && host - g_afd.reset_at >= 10000000){
-            rlog("[roam] f=%ld AFK in free roam: stuck (%.0f km/h for %.0f s at %.0f %.0f): the car back onto the road (the R key's reset)\n",
-                 rh_frame(), (double)v, (double)(host - g_afd.slow_since) / 1e6, (double)x, (double)y);
+        if (((g_afd.slow_since && host - g_afd.slow_since >= 5000000) || pinned) && host - g_afd.reset_at >= 10000000){
+            if (pinned) rlog("[roam] f=%ld AFK in free roam: pinned (%.0f km/h, not 5 m in %.0f s at %.0f %.0f): the car back onto the road (the R key's reset)\n",
+                             rh_frame(), (double)v, (double)(host - g_afd.mark_at) / 1e6, (double)x, (double)y);
+            else rlog("[roam] f=%ld AFK in free roam: stuck (%.0f km/h for %.0f s at %.0f %.0f): the car back onto the road (the R key's reset)\n",
+                      rh_frame(), (double)v, (double)(host - g_afd.slow_since) / 1e6, (double)x, (double)y);
             rh_call(c, FN_AUTOPILOT_OFF, pl, 0, 0, 0);
             rh_call(c, FN_RESETCAR, pl, 0, 0, 0);
-            g_afd.reset_at = host; g_afd.re_on_at = host + 1500000; g_afd.resets++; g_afd.slow_since = 0;
+            g_afd.reset_at = host; g_afd.re_on_at = host + 1500000; g_afd.resets++; g_afd.slow_since = 0; g_afd.mark_at = 0;
+        }
+    }
+    /* the GPS bot's arrival: a human's controller switches the GPS off near its target (0x42A360); with the AI driving
+     * nobody does, and the bot would loop round the target for good (16:05: past the car lot at 141 km/h, a 1.2 km
+     * loop back).  Within GPS_ARRIVE_M the GPS goes off as meet_gps does it, and the AI roams on */
+    if (MR8(0x00838590u + 0x29u) && MR32(car + 0x24u) == 3u){
+        float ax = MRF32(0x00838590u + 0x10u) - x, ay = MRF32(0x00838590u + 0x14u) - y;
+        if (ax * ax + ay * ay < GPS_ARRIVE_M * GPS_ARRIVE_M){
+            rlog("[roam] f=%ld GPS bot: at the GPS destination (%.0f m): the GPS off, the bot roams on\n", rh_frame(), (double)rc_sqrtf(ax * ax + ay * ay));
+            MR8(0x00838590u + 0x29u) = 0; MR32(0x00838590u + 0x10u) = 0; MR32(0x00838590u + 0x14u) = 0; MR8(0x00838590u + 0x28u) = 0; MR32(0x00838590u) = 0;
+            afk_note(host, "The bot has reached the GPS destination");
         }
     }
     if (host - g_afd.log_at < 5000000) return;
@@ -10357,6 +10385,168 @@ static void afk_roam(CPU *c, int64_t host, uint32_t car){
     rlog("[roam] f=%ld AFK in free roam: %.0f km/h at %.0f %.0f, %.0f m so far, %d hit(s), %d reset(s); driver %u; GPS %s (%.0f m to go); "
          "route state %u for %s\n", rh_frame(), (double)v, (double)x, (double)y, (double)g_afd.dist, g_afd.hits, g_afd.resets, MR32(car + 0x24u),
          gps ? "on" : "off", gps ? (double)gd : 0., MR32(0x0081cbc0u), MR32(0x0081cbc0u + 0x17a4u) == car ? "our car" : "another car");
+}
+/* ---- the AFK bot follows the GPS (fix phase 10; GpsBot = 1) --------------------------------------------------------
+ * The game's racer AI (the AFK bot's driver, kind 3) drives on the AI road network (Tracks\Routes*\Paths*.bin: roads at
+ * 0x88A334[i], each +0x34 its node count, +0x8C its nodes of 0x38 bytes, +0x18/+0x1A a node's x/y as words, x 256 x
+ * [0x81E7FC]).  At a road's end its path builder (0x41F8E0, appending at 0x41F7EB) asks 0x41EC20 for the next road:
+ * thiscall (the path list; a1 -> the road out, a2 -> the road in/out, a3 -> the node index out, a4 -> the link out,
+ * a5 -> the direction byte, a6 the car's brain, car +0x2C), which walks the junction's links (0x5D4380 how many,
+ * 0x5D43C0 the i-th; a link's +0xC: bits 0-3 kind, bit 18 which end, bit 23 the direction change, bit 26) and takes
+ * the first the brain accepts (its vt[17]) or a chance picks (0x41CFA0); none: straight on along the road.  No brain
+ * ever hears of a route (every vt[19] is "ret 8"), so the GPS's route planner (0x81CBC0) steers nobody.  Here, for
+ * the player's car with the AFK bot driving and a GPS set, the choice is ours: the link whose road's far end lies
+ * nearest the GPS target (greedy; the roads of Bayview converge, and a wrong turn costs one block).  Everything else
+ * (the drive itself, traffic, the lane) stays the game's.  guards_win.c ai_gps_install hooks 0x41EC20 and calls
+ * roam_game_gps_pick first: -1 = not ours (the game's own choice), else the function's result with its outputs set
+ * as its own 0x41ED5E does (the road, its entry node, that node's index, the link, the direction flipped by the
+ * link's bit 23, the brain's +0x354 by bit 26). */
+#define FN_ROAD_LINKS   0x005d4380u   /* thiscall road -> how many links */
+#define FN_ROAD_LINK    0x005d43c0u   /* thiscall road (i) -> the link */
+#define FN_LINK_ROAD    0x005d86a0u   /* thiscall link -> the road it leads onto */
+#define FN_LINK_NODE    0x005d86d0u   /* thiscall link -> the node it enters at */
+#define G_ROADS_AI      0x0088a334u   /* uint32_t[]: the AI roads */
+#define G_ROAD_SCALE    0x0081e7fcu   /* float: a node's direction words x this (0x401AA0) */
+/* ---- the route over the AI lanes (fix phase 10) ----------------------------------------------------------------
+ * The lanes are one-way: the path builder asks at every node of the lane ahead, and a node offers straight on (the
+ * next node of the same lane) and at most its two links (a turn onto another lane, 0x5D43C0; each link's +0xC: bits
+ * 0-3 kind, bit 18 which way along the lane it serves, bit 23 whether the direction flips on the new lane).  So the
+ * way to the GPS is a shortest path over states (lane, node, direction): Dijkstra from the car's state to the lane
+ * node nearest the GPS target (within GB_ARRIVE_M, else the nearest reached), its steps kept per state (straight, or
+ * the i-th link), and the chooser takes the step of the state it is asked about.  A greedy pick by the lane's far
+ * end (the first build) went round one block for minutes.  Planned again when the GPS target changes or the asked
+ * state is off the path (at most twice a second); no path: the game's own choice. */
+/* a node's place: +0 x, +4 y (floats; 0x40F4A0 subtracts them from a car's), +0x18/+0x1A its direction as words
+ * (0x401AA0: x [0x81E7FC], the sign flipped), +0xC the lane's index in the low 11 bits */
+static void node_xy(uint32_t node, float *x, float *y){ *x = MRF32(node); *y = MRF32(node + 4u); }
+#define GB_ROADS   2048               /* [node + 0xC] & 0x7FF: the lane's index */
+#define GB_NODES   128                /* lanes are 4..40 nodes; more are skipped */
+#define GB_STATES  (GB_ROADS * GB_NODES * 2)
+#define GB_ARRIVE_M 30.f
+#define GB_EXPAND  50000
+static float   g_gb_cost[GB_STATES];
+static int32_t g_gb_prev[GB_STATES];
+static int32_t g_gb_heap[GB_STATES];
+static uint8_t g_gb_act[GB_STATES];   /* the step INTO the state (1 straight, 2 + i the link) while planning; then the step OUT of it on the path */
+static int g_gb_n, g_gb_ok; static float g_gb_gx, g_gb_gy; static int64_t g_gb_at; static int g_gb_plans, g_gb_fails;
+static uint32_t gb_road(uint32_t r){ return r < GB_ROADS ? rd32(G_ROADS_AI + 4u * r) : 0; }
+static uint32_t gb_node(uint32_t road, uint32_t k){ return road + 0x8cu + 0x38u * k; }
+static uint32_t gb_count(uint32_t road){ uint32_t n = (uint32_t)(int16_t)MR16(road + 0x34u); return n > GB_NODES ? GB_NODES : n; }
+static int gb_state(uint32_t r, uint32_t k, uint32_t d){ return (int)((r * GB_NODES + k) * 2u + d); }
+static void gb_push(int s){
+    int i = g_gb_n++; g_gb_heap[i] = s;
+    while (i > 0){ int p = (i - 1) / 2; if (g_gb_cost[g_gb_heap[p]] <= g_gb_cost[g_gb_heap[i]]) break; int t = g_gb_heap[p]; g_gb_heap[p] = g_gb_heap[i]; g_gb_heap[i] = t; i = p; }
+}
+static int gb_pop(void){
+    int s = g_gb_heap[0]; g_gb_heap[0] = g_gb_heap[--g_gb_n];
+    int i = 0;
+    for (;;){ int l = 2 * i + 1, m = i; if (l < g_gb_n && g_gb_cost[g_gb_heap[l]] < g_gb_cost[g_gb_heap[m]]) m = l;
+              if (l + 1 < g_gb_n && g_gb_cost[g_gb_heap[l + 1]] < g_gb_cost[g_gb_heap[m]]) m = l + 1;
+              if (m == i) break; int t = g_gb_heap[m]; g_gb_heap[m] = g_gb_heap[i]; g_gb_heap[i] = t; i = m; }
+    return s;
+}
+static void gb_relax(int from, int to, float cost, uint8_t act){
+    if (to < 0 || to >= GB_STATES || cost >= g_gb_cost[to]) return;
+    g_gb_cost[to] = cost; g_gb_prev[to] = from; g_gb_act[to] = act;
+    if (g_gb_n < GB_STATES) gb_push(to);
+}
+/* the path from (r, k, d) to the GPS target: 1 = found (g_gb_act holds the steps out of each state on it) */
+static int gb_plan(uint32_t r0, uint32_t k0, uint32_t d0, float gx, float gy){
+    int64_t t0 = roam_plat_now_us();
+    for (int i = 0; i < GB_STATES; i++){ g_gb_cost[i] = 1e30f; g_gb_prev[i] = -1; g_gb_act[i] = 0; }
+    g_gb_n = 0;
+    int s0 = gb_state(r0, k0, d0), best = -1, expanded = 0; float best_d = 1e30f;
+    g_gb_cost[s0] = 0; gb_push(s0);
+    while (g_gb_n > 0 && expanded < GB_EXPAND){
+        int s = gb_pop();
+        uint32_t d = (uint32_t)s & 1u, k = ((uint32_t)s >> 1) % GB_NODES, r = ((uint32_t)s >> 1) / GB_NODES;
+        uint32_t road = gb_road(r);
+        if (!ok(road, 0x90)) continue;
+        uint32_t cnt = gb_count(road);
+        if (k >= cnt) continue;
+        uint32_t node = gb_node(road, k);
+        if (!ok(node, 0x38)) continue;
+        float nx, ny; node_xy(node, &nx, &ny);
+        if (!(nx > -1e5f && nx < 1e5f && ny > -1e5f && ny < 1e5f)) continue;
+        expanded++;
+        float dd = rc_sqrtf((nx - gx) * (nx - gx) + (ny - gy) * (ny - gy));
+        if (dd < best_d){ best_d = dd; best = s; }
+        if (dd < GB_ARRIVE_M) break;
+        int k2 = d ? (int)k + 1 : (int)k - 1;
+        if (k2 >= 0 && k2 < (int)cnt){
+            float x2, y2; node_xy(gb_node(road, (uint32_t)k2), &x2, &y2);
+            gb_relax(s, gb_state(r, (uint32_t)k2, d), g_gb_cost[s] + rc_sqrtf((x2 - nx) * (x2 - nx) + (y2 - ny) * (y2 - ny)), 1);
+        }
+        uint32_t n = gcall0(0, FN_ROAD_LINKS, node); if (n > 2) n = 2;
+        for (uint32_t i = 0; i < n; i++){
+            uint32_t lk = gcall1(0, FN_ROAD_LINK, node, i);
+            if (!ok(lk, 0x10)) continue;
+            uint32_t fl = MR32(lk + 0xcu);
+            if (((fl >> 18) & 1u) == d) continue;
+            if ((fl & 0xfu) == 3u) continue;                          /* (a kind-3 link the game takes only one way: left out) */
+            uint32_t r2p = gcall0(0, FN_LINK_ROAD, lk), n2 = gcall0(0, FN_LINK_NODE, lk);
+            if (!ok(r2p, 0x90) || !ok(n2, 0x38)) continue;
+            uint32_t r2 = MR32(n2 + 0xcu) & 0x7ffu, c2 = gb_count(r2p), k2l = (n2 - r2p - 0x8cu) / 0x38u;
+            if (gb_road(r2) != r2p || k2l >= c2) continue;
+            float x2, y2; node_xy(n2, &x2, &y2);
+            gb_relax(s, gb_state(r2, k2l, d ^ ((fl >> 23) & 1u)), g_gb_cost[s] + rc_sqrtf((x2 - nx) * (x2 - nx) + (y2 - ny) * (y2 - ny)) + 5.f, (uint8_t)(2 + i));
+        }
+    }
+    g_gb_plans++;
+    if (best < 0 || best == s0){ g_gb_fails++; rlog("[roam] f=%ld GPS bot: no way over the lanes from lane %u node %u dir %u to %.0f %.0f (%d states, %.1f ms)\n", rh_frame(), r0, k0, d0, (double)gx, (double)gy, expanded, (roam_plat_now_us() - t0) / 1000.0); return 0; }
+    /* the steps out of each state on the path */
+    int steps = 0;
+    for (int cur = best; g_gb_prev[cur] >= 0 && steps < GB_STATES; cur = g_gb_prev[cur], steps++) g_gb_act[g_gb_prev[cur]] = g_gb_act[cur];
+    g_gb_act[best] = 0;
+    for (int cur = best; ; cur = g_gb_prev[cur]){ if (g_gb_prev[cur] < 0) break; }
+    rlog("[roam] f=%ld GPS bot: a way over the lanes: %d steps, %.0f m, ends %.0f m from the GPS (%d states looked at, %.1f ms)\n", rh_frame(), steps,
+         (double)g_gb_cost[best], (double)best_d, expanded, (roam_plat_now_us() - t0) / 1000.0);
+    return 1;
+}
+static int g_gpsbot = -1, g_gps_said;
+uint32_t roam_game_gps_pick(uint32_t list, uint32_t *a){
+    if (g_gpsbot < 0) g_gpsbot = env_int("NFSU2_ROAM_GPSBOT", 1, 0, 1);
+    if (!g_gpsbot || !g_inited || !O.on || !g_afk_on) return 0xffffffffu;
+    uint32_t car = player_car(), brain = a[5], road = rd32(a[0]), node = rd32(a[1]);   /* a1 -> the lane, a2 -> its node */
+    if (!car || !ok(brain, 0x360) || rd32(car + 0x2cu) != brain || MR32(car + 0x24u) != 3u) return 0xffffffffu;
+    if (!MR8(G_GPS + 0x29u) || !ok(road, 0x90) || !ok(node, 0x38) || !ok(a[4], 1)) return 0xffffffffu;
+    float gx = MRF32(G_GPS + 0x10u), gy = MRF32(G_GPS + 0x14u);
+    uint8_t dir = MR8(a[4]);
+    uint32_t r = MR32(node + 0xcu) & 0x7ffu, cnt = gb_count(road), k = rd32(a[2]);
+    if (gb_road(r) != road || k >= cnt || (node - road - 0x8cu) / 0x38u != k) return 0xffffffffu;
+    int s = gb_state(r, k, dir);
+    int64_t now = roam_plat_now_us();
+    if (!g_gb_ok || gx != g_gb_gx || gy != g_gb_gy || !g_gb_act[s]){
+        if (now - g_gb_at < 500000) return 0xffffffffu;                           /* planned a moment ago: the game's choice meanwhile */
+        g_gb_at = now; g_gb_gx = gx; g_gb_gy = gy;
+        g_gb_ok = gb_plan(r, k, dir, gx, gy);
+        if (!g_gb_ok) return 0xffffffffu;
+    }
+    uint8_t act = g_gb_act[s];
+    if (!act) return 0xffffffffu;                                                  /* the path's end (the game's choice: the GPS goes off on arrival) */
+    float cx = MRF32(car + 0x60u), cy = MRF32(car + 0x64u);
+    if (act == 1){                                                                 /* straight on, as the game's own fallback does it */
+        int sidx = dir ? (int)k + 1 : (int)k - 1;
+        if (sidx < 0 || sidx >= (int)cnt) return 0xffffffffu;
+        MR32(a[3]) = 0; MR32(a[2]) = (uint32_t)sidx; MR32(a[1]) = gb_node(road, (uint32_t)sidx);
+        return 1;
+    }
+    uint32_t lk = gcall1(0, FN_ROAD_LINK, node, act - 2u);
+    if (!ok(lk, 0x10)) return 0xffffffffu;
+    uint32_t fl = MR32(lk + 0xcu), r2p = gcall0(0, FN_LINK_ROAD, lk), n2 = gcall0(0, FN_LINK_NODE, lk);
+    if (!ok(r2p, 0x90) || !ok(n2, 0x38)) return 0xffffffffu;
+    static int last_s = -1;                                                        /* (the builder asks the same node many times a frame) */
+    if (g_gps_said < 300 && s != last_s){ g_gps_said++; last_s = s;
+        rlog("[roam] f=%ld GPS bot: at %.0f %.0f, %.0f m from the GPS: lane %u node %u -> the turn onto lane %u node %u (%.0f m of the way left)\n",
+             rh_frame(), (double)cx, (double)cy, (double)rc_sqrtf((cx - gx) * (cx - gx) + (cy - gy) * (cy - gy)), r, k, MR32(n2 + 0xcu) & 0x7ffu,
+             (n2 - r2p - 0x8cu) / 0x38u, (double)g_gb_cost[s]); }
+    MR32(a[0]) = r2p; MR32(a[1]) = n2; MR32(a[2]) = (n2 - r2p - 0x8cu) / 0x38u; MR32(a[3]) = lk;
+    MR8(a[4]) = dir ^ (uint8_t)((fl >> 23) & 1u);
+    if ((fl >> 26) & 1u){
+        uint32_t c = rd32(list + 4u), prev = c ? rd32(list + 4u * c + 4u) : 0;
+        MRF32(brain + 0x354u) = ok(prev, 0x60) ? MRF32(prev + 0x54u) : 0.f;
+    }
+    return 1;
 }
 static void afk_frame(CPU *c, int64_t host, int in_roam){
     if (!g_afk.secs) g_afk.secs = env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) ? env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) : -1;

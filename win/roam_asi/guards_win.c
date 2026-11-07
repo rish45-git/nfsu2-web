@@ -107,6 +107,7 @@ static void addon_race_install(void){
 static void traffic_install(void);
 static void carpool_install(void);
 static void devguard_install(void);
+static void ai_gps_install(void);
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
     uint8_t *site = (uint8_t *)(uintptr_t)SND_SITE;
@@ -117,6 +118,7 @@ void guards_win_install(void){
     addon_race_install();
     carpool_install();
     devguard_install();
+    ai_gps_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
         return;
@@ -320,12 +322,72 @@ static void carpool_install(void){
 typedef BOOL (__stdcall *EnumDisplaySettingsA_t)(const char *, DWORD, DEVMODEA *);
 typedef int  (__stdcall *MessageBoxA_t)(HWND, const char *, const char *, UINT);
 typedef void (__stdcall *ExitProcess_t)(UINT);
+typedef DWORD (__stdcall *SetThreadExecutionState_t)(DWORD);
+typedef BOOL (__stdcall *PostMessageA_t)(HWND, UINT, WPARAM, LPARAM);
+typedef UINT (__stdcall *SendInput_t)(UINT, INPUT *, int);
+typedef HDESK (__stdcall *OpenInputDesktop_t)(DWORD, BOOL, DWORD);
+typedef BOOL (__stdcall *GetUserObjectInformationA_t)(HANDLE, int, void *, DWORD, DWORD *);
+typedef BOOL (__stdcall *CloseDesktop_t)(HDESK);
+typedef BOOL (__stdcall *SetThreadDesktop_t)(HDESK);
+typedef BOOL (__stdcall *EnumDesktopWindows_t)(HDESK, WNDENUMPROC, LPARAM);
+static BOOL __stdcall saver_close_cb(HWND h, LPARAM l){ PostMessageA_t pm = (PostMessageA_t)(void *)(uintptr_t)l; if (pm) pm(h, 0x0010u /* WM_CLOSE */, 0, 0); return TRUE; }
+static DWORD __stdcall saver_end_thread(void *arg){
+    (void)arg;
+    HMODULE u = GetModuleHandleA("user32.dll");
+    OpenInputDesktop_t oid = u ? (OpenInputDesktop_t)(void *)GetProcAddress(u, "OpenInputDesktop") : 0;
+    SetThreadDesktop_t std_ = u ? (SetThreadDesktop_t)(void *)GetProcAddress(u, "SetThreadDesktop") : 0;
+    SendInput_t si = u ? (SendInput_t)(void *)GetProcAddress(u, "SendInput") : 0;
+    EnumDesktopWindows_t edw = u ? (EnumDesktopWindows_t)(void *)GetProcAddress(u, "EnumDesktopWindows") : 0;
+    PostMessageA_t pm = u ? (PostMessageA_t)(void *)GetProcAddress(u, "PostMessageA") : 0;
+    CloseDesktop_t cd = u ? (CloseDesktop_t)(void *)GetProcAddress(u, "CloseDesktop") : 0;
+    HDESK d = oid ? oid(0, 0, 0x10000000u /* GENERIC_ALL */) : 0;
+    if (!d) return 1;
+    if (std_ && std_(d)){
+        if (si){ INPUT in[2]; memset(in, 0, sizeof in); in[0].type = INPUT_MOUSE; in[0].mi.dx = 1; in[0].mi.dwFlags = MOUSEEVENTF_MOVE;
+                 in[1] = in[0]; in[1].mi.dx = -1; si(2, in, sizeof in[0]); }
+        if (edw) edw(d, saver_close_cb, (LPARAM)(uintptr_t)pm);
+    }
+    if (cd) cd(d);
+    return 0;
+}
+static int g_dev_woken;   /* the screen had to be woken at the start (a retry of CreateDevice is worth it) */
 static void __attribute__((cdecl, used)) dev_wait(void){
     static int done;
     if (done) return;
     done = 1;
-    HMODULE u = GetModuleHandleA("user32.dll");
+    HMODULE u = GetModuleHandleA("user32.dll"), k = GetModuleHandleA("kernel32.dll");
     EnumDisplaySettingsA_t eds = u ? (EnumDisplaySettingsA_t)(void *)GetProcAddress(u, "EnumDisplaySettingsA") : 0;
+    /* the screen asleep (the laptop's case; the desktop's too, 14:46-14:49: CreateDevice D3DERR_INVALIDCALL with
+     * the mode still 2560x1440): the monitor is asked on (WM_SYSCOMMAND SC_MONITORPOWER -1 to every window) and given
+     * a second, and from here on the display is kept awake while the game runs (SetThreadExecutionState
+     * ES_DISPLAY_REQUIRED, continuous: an unattended game no longer loses its screen) */
+    SetThreadExecutionState_t stes = k ? (SetThreadExecutionState_t)(void *)GetProcAddress(k, "SetThreadExecutionState") : 0;
+    PostMessageA_t pm = u ? (PostMessageA_t)(void *)GetProcAddress(u, "PostMessageA") : 0;
+    if (stes) stes(0x80000000u | 0x00000002u);                     /* ES_CONTINUOUS | ES_DISPLAY_REQUIRED */
+    if (pm) pm((HWND)(uintptr_t)0xffffu, 0x0112u, 0xf170u, (LPARAM)-1);   /* HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, on */
+    /* the screen saver up (the desktop, 14:36-14:53: the input desktop "Screen-saver" after 6 idle hours; CreateDevice
+     * D3DERR_INVALIDCALL on every start, the monitor on and the mode 2560x1440 all along): a nudge of the mouse (SendInput,
+     * one pixel and back) ends it as a hand on the mouse would, and the start waits until the input desktop is the
+     * ordinary one again */
+    SendInput_t si = u ? (SendInput_t)(void *)GetProcAddress(u, "SendInput") : 0;
+    OpenInputDesktop_t oid = u ? (OpenInputDesktop_t)(void *)GetProcAddress(u, "OpenInputDesktop") : 0;
+    GetUserObjectInformationA_t guoi = u ? (GetUserObjectInformationA_t)(void *)GetProcAddress(u, "GetUserObjectInformationA") : 0;
+    CloseDesktop_t cd = u ? (CloseDesktop_t)(void *)GetProcAddress(u, "CloseDesktop") : 0;
+    int saver = 0, nudged = 0;
+    for (int tries = 0; tries < DEVWAIT_S; tries++){
+        char nm[64] = "";
+        HDESK d = oid ? oid(0, 0, 0x80000000u /* GENERIC_READ */) : 0;
+        if (d){ DWORD ln = 0; if (guoi) guoi(d, 2 /* UOI_NAME */, nm, sizeof nm, &ln); if (cd) cd(d); }
+        if (!d || (nm[0] && strcmp(nm, "Screen-saver"))) break;      /* the ordinary desktop (or no answer: go on) */
+        if (!saver) roam_log("[guard] the device start: the screen saver is up (the input desktop \"%s\"): the mouse nudged, waiting for the desktop\n", nm);
+        saver++;
+        /* from the game's own desktop the nudge never reaches the saver (tried: 30 s of nudges, the saver stayed), so a
+         * thread of its own joins the input desktop, nudges there and closes the saver's windows (WM_CLOSE) */
+        if (si && oid){ HANDLE th = CreateThread(0, 0, saver_end_thread, 0, 0, 0); if (th){ WaitForSingleObject(th, 3000); CloseHandle(th); nudged++; } }
+        Sleep(1000);
+    }
+    if (saver){ Sleep(3000); g_dev_woken = 1; roam_log("[guard] the device start: the desktop is back after %d s (%d nudge(s)), 3 s for it to settle\n", saver, nudged); }
+    roam_log("[guard] the device start: the display asked awake and kept so while the game runs%s\n", pm ? "" : " (no PostMessageA)");
     if (!eds) return;
     const char *t = roam_opt("NFSU2_ROAM_TEST_DEVWAIT");
     int test = t && t[0] == '1';
@@ -343,8 +405,23 @@ static void __attribute__((cdecl, used)) dev_wait(void){
     }
     if (waited) roam_log("[guard] the display is %lux%lu after %d s: the start goes on\n", dw, dh, waited);
 }
+/* the device still missing after the two attempts, and we had to wake the screen: the game's own CreateDevice
+ * (0x5B9B70, no arguments) again, every 2 s, up to 10 times (right after a screen saver's end it answers
+ * D3DERR_NOTAVAILABLE for a moment).  Phase 6's retry ended in floating-point traps (0xC00002B4) after the second
+ * device came: the thread's x87 control word and MXCSR are set back to the usual masks after each try */
+static void dev_retry(void){
+    typedef void (__attribute__((cdecl)) *mkdev_t)(void);
+    mkdev_t mk = (mkdev_t)(uintptr_t)DEV_WAIT_SITE;
+    for (int i = 1; i <= 10 && !MR32(0x00870974u); i++){
+        Sleep(2000);
+        mk();
+        { uint16_t cw = 0x027f; uint32_t csr = 0x1f80; __asm__ volatile("fnclex\n\tfldcw %0\n\tldmxcsr %1" : : "m"(cw), "m"(csr)); }
+        roam_log("[guard] the device start: CreateDevice again (%d): %s\n", i, MR32(0x00870974u) ? "a device" : "none yet");
+    }
+}
 static void __attribute__((cdecl, used)) dev_check(void){
     const char *t = roam_opt("NFSU2_ROAM_TEST_DEVFAIL");
+    if (!MR32(0x00870974u) && g_dev_woken && !(t && t[0] == '1')) dev_retry();
     if (MR32(0x00870974u) && !(t && t[0] == '1')) return;
     roam_log("[guard] the game could not create its Direct3D device (the screen asleep, or its resolution larger than the "
              "display?): it would crash at 0x5D2780; a message and the exit instead\n");
@@ -391,6 +468,47 @@ static void devguard_install(void){
     FlushInstructionCache(GetCurrentProcess(), su, 5);
     roam_log("[guard] the device start: the game waits for a display big enough (0x%08x), and says so instead of crashing "
              "with no device (0x%08x)\n", DEV_WAIT_SITE, DEV_USE_SITE);
+}
+
+/* ---- the AFK bot follows the GPS (fix phase 10): the AI's choice of the next road is ours ---------------------------
+ * 0x41EC20 (thiscall, 6 arguments, ret 0x18; roam_game.c roam_game_gps_pick says what it does): the stub asks the
+ * plugin first, with the list (ecx) and the arguments; -1 = the game's own choice (the 5 bytes moved, then on at
+ * 0x41EC25), else the plugin's answer is the function's (ret 0x18). */
+#define GPS_PICK_SITE 0x0041ec20u   /* push ecx; mov eax,[esp+0xC]; push ebx; push ebp */
+uint32_t roam_game_gps_pick(uint32_t list, uint32_t *args);
+static void ai_gps_install(void){
+    static const uint8_t want[8] = { 0x51, 0x8b, 0x44, 0x24, 0x0c, 0x53, 0x55, 0x56 };
+    uint8_t *site = (uint8_t *)(uintptr_t)GPS_PICK_SITE;
+    DWORD old;
+    const char *v = roam_opt("NFSU2_ROAM_GPSBOT");
+    if (v && v[0] == '0') return;
+    if (!ok(GPS_PICK_SITE, sizeof want) || memcmp(site, want, sizeof want)){
+        roam_log("[guard] the AI's road choice (0x%08x) is not the game's (another mod?): the AFK bot does not follow the GPS\n", GPS_PICK_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint8_t *t = g_page + 768, *q = t;
+    *q++ = 0x60;                                                   /* pushad */
+    *q++ = 0x8d; *q++ = 0x44; *q++ = 0x24; *q++ = 0x24;            /* lea eax, [esp+0x24]: the arguments (past pushad and the return) */
+    *q++ = 0x50;                                                   /* push eax */
+    *q++ = 0x51;                                                   /* push ecx: the list */
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)roam_game_gps_pick); q += 4;
+    *q++ = 0x83; *q++ = 0xc4; *q++ = 0x08;                         /* add esp, 8 */
+    *q++ = 0x83; *q++ = 0xf8; *q++ = 0xff;                         /* cmp eax, -1 */
+    *q++ = 0x74; *q++ = 0x0a;                                      /* je: the game's own */
+    *q++ = 0x89; *q++ = 0x44; *q++ = 0x24; *q++ = 0x1c;            /* mov [esp+0x1C], eax: pushad's eax */
+    *q++ = 0x61;                                                   /* popad */
+    *q++ = 0xc2; *q++ = 0x18; *q++ = 0x00;                         /* ret 0x18 */
+    *q++ = 0x90; *q++ = 0x90;
+    *q++ = 0x61;                                                   /* popad */
+    memcpy(q, want, 5); q += 5;                                    /* push ecx; mov eax,[esp+0xC] */
+    *q++ = 0xe9; put_rel(q, GPS_PICK_SITE + 5u); q += 4;           /* jmp 0x41EC25 */
+    FlushInstructionCache(GetCurrentProcess(), g_page, sizeof g_page);
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)t);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    roam_log("[guard] GpsBot: with the AFK bot driving and a GPS set, the AI's next road is the one toward the GPS (0x%08x)\n", GPS_PICK_SITE);
 }
 
 void guards_win_frame(void){
