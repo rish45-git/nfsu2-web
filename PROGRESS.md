@@ -61,37 +61,51 @@ says native clients are welcome there.
   Expected ping Seattle <-> the desktop ~140-170 ms, whoever hosts.
 - **Rishi's rule (09:35):** quit races and close games once a test has its answer; test saves don't matter.
 
-**Next, in order:**
+- **Cutscenes (checked 10:10):** Rishi had seen no story cutscene since the project started. No mod skips them
+  (ExtraOptions SkipMovies = 0, WidescreenFix SkipIntro = 0, ours Movies = 1). A new career ("cuttest" profile;
+  "rishi" untouched, backed up in this session's scratchpad): the story intro (the comic pages, then the "6 MONTHS
+  AGO..." movie) plays with the plugin off and on. The later story scenes (stage ends) are not checked.
 
-1. The trip's background stall (above); the 0x5CE83E crash (AddOnStockLook = 1), with the laptop's two dumps.
-2. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
+**Next: the fix phases, in order (Rishi's list, 2026-11-07 ~10:45; "fix phase" so they don't mix with the build
+phases 0-6 below):**
+
+1. **Fix phase 1: bots on the laptop, a retest:** with `AiRacers = 2` the laptop fell to ~2.5 fps at the race load and the host
+   called the race off (09:06, and 06:03), so it runs `AiRacers = 0`. That was before 6038e3ff/bba7aad4 (the AI
+   racers' cars are now loaded with the players'): one race with the laptop on `AiRacers = 2` tells if that fixed it.
+2. **Fix phase 2: The trip stalls in the background:** a joiner's LAN-menu steps ("the career car" -> "join the game") wait while
+   its window is behind another (the laptop, 57 s, 09:49), with RunInBackground on; the host waits or gives up.
+3. **Fix phase 3: The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
+   game?" (09:30:08-11, three "the save: mode 0x4000151 / 0x151 ..., top GarageMain.fng" lines) and the plugin got
+   past it; unknown whether it answered Yes or No, so a race's prize may not reach the save.
+4. **Fix phase 4: the results' details:** "margin 0.00" in every race's log, and once the loser had more points than the winner
+   (09:17: RishiLaptop 1st with 7600, Rishi 2nd with 7961). Maybe cosmetic; check what the career credit uses.
+5. **Fix phase 5: CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
-3. **Cutscenes:** Rishi has seen no story cutscene since the project started (only a race-intro "how to drift"
-   video). No mod skips them (ExtraOptions SkipMovies = 0, WidescreenFix SkipIntro = 0, ours Movies = 1). 10:10, a
-   new career ("cuttest" profile; "rishi" untouched, backed up in this session's scratchpad): the story intro (the
-   comic pages, then the "6 MONTHS AGO..." movie) plays with the plugin off (renamed .off) and with 825c3aa1 on. So
-   the plugin does not block it; the story cutscenes later in the career (stage ends) are not checked yet.
-4. **Open bugs:**
-   - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
-   - the 0x1D2780 start crash (D3D9 CreateDevice failing on the laptop with its screen asleep);
-   - **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
-     the server went away (the desktop rebooted at 08:36; "Rishi left: timeout" 08:34:50, "switch: cannot reach the
-     server" from 08:35:19), 3 s after "AFK: a key: the car is the player's again". Full dump on the laptop:
-     `C:\Users\risha\AppData\Local\CrashDumps\SPEED2.EXE.21888.dmp` (43.6 MB). **Again at 08:59:40** (dump
-     `SPEED2.EXE.28240.dmp`): on the laptop's way into the desktop's sprint, ~0.5 s after the trip's "quit to the main
-     menu", with the desktop's SENTRAB12 still in free-roam slot 0 ("0 parts", AddOnStockLook; slots released 0). The
-     old build (93 parts) always quit there cleanly ("2 ride(s) of friends' cars unloaded"). Static look: 0x5CE83E is
-     `mov [eax+4], edi` in 0x5CE7D0 (thiscall; it drops a model from the list at 0x872B44, frees its +0x2C and +0x20,
-     then unlinks the model itself: `next->prev = prev` with `next` bad), whose one caller is the resource unloader
-     0x493F20 at chunk id 0x80134100 (a geometry pack). So a car geometry pack is unloaded with a model already
-     unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
-     same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
-   - the bots following the GPS (item 4: the game's AI ignores the GPS, so it needs a driver of our own).
-5. **Ideas from players' complaints, not done:**
+6. **Fix phase 6: The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
+   that Rishi drives the Supra (a stock car).
+   **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
+   the server went away (the desktop rebooted at 08:36; "Rishi left: timeout" 08:34:50, "switch: cannot reach the
+   server" from 08:35:19), 3 s after "AFK: a key: the car is the player's again". Full dump on the laptop:
+   `C:\Users\risha\AppData\Local\CrashDumps\SPEED2.EXE.21888.dmp` (43.6 MB). **Again at 08:59:40** (dump
+   `SPEED2.EXE.28240.dmp`): on the laptop's way into the desktop's sprint, ~0.5 s after the trip's "quit to the main
+   menu", with the desktop's SENTRAB12 still in free-roam slot 0 ("0 parts", AddOnStockLook; slots released 0). The
+   old build (93 parts) always quit there cleanly ("2 ride(s) of friends' cars unloaded"). Static look: 0x5CE83E is
+   `mov [eax+4], edi` in 0x5CE7D0 (thiscall; it drops a model from the list at 0x872B44, frees its +0x2C and +0x20,
+   then unlinks the model itself: `next->prev = prev` with `next` bad), whose one caller is the resource unloader
+   0x493F20 at chunk id 0x80134100 (a geometry pack). So a car geometry pack is unloaded with a model already
+   unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
+   same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
+7. **Fix phase 7: Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
+   CreateDevice failing on the laptop with its screen asleep).
+8. **Fix phase 8: The bots following the GPS** (item 4 of the players' list: the game's AI ignores the GPS, so it needs a driver
+   of our own).
+9. **Fix phase 9: Ideas from players' complaints:**
    - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
      0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
      Needs a race win to test;
    - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
+
+**Later (Rishi: "too confusing right now"):** the friend in Seattle without Tailscale (above).
 
 ## The exe
 
