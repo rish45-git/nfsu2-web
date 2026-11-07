@@ -10111,6 +10111,13 @@ static void afk_route(CPU *c, int64_t host, uint32_t race, uint32_t car){
     }
     float d = race_share(race, car);
     if (d < 0.f) return;
+    {   /* (over the line: the game's own autopilot takes the car past it, nothing to watch) */
+        uint32_t n = MR32(race + 0x24u);
+        for (uint32_t i = 0; i < n && i < 8u; i++){
+            uint32_t r = rd32(race + 0xbd0u + 4u * i);
+            if (ok(r, 0x18) && MR32(r) == car && MR16(r + 0x10u)) return;
+        }
+    }
     if (g_afr.car != car){ g_afr.car = car; g_afr.best = d; g_afr.best_at = host; }
     if (d > g_afr.best + 0.002f){ g_afr.best = d; g_afr.best_at = host; }
     if (host - g_afr.log_at >= 10000000){

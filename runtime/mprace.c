@@ -638,7 +638,7 @@ static float balance_race(uint32_t ours, int mode){
     /* The AI racers' cars (airacers_win.c, driver 3 at the start; the player's ask, 2026-11-07: "make sure that all
      * these bots ALWAYS have the best gear for playing with actual players"): each one's power so that it is rated
      * AiEdge % (5 by default) above the best of the players' cars, whatever car the game picked for it (up to twice
-     * its power, at least 3/4 of it) -- balance or not, every race type with AI */
+     * its power, never less than its own) -- balance or not, every race type with AI */
     if (best > 0.f){
         const char *ev = getenv("NFSU2_ROAM_AIEDGE");
         int edge = 5;
@@ -648,7 +648,7 @@ static float balance_race(uint32_t ours, int mode){
             if (!pi[i] || !(okm(car[i], 0x28) && MR32(car[i] + 0x24u) == 3u) || g_bal.n >= RACE_CARS_MAX) continue;
             float ri = MRF32(pi[i] + PI_RATING), goal = best * (1.f + (float)edge / 100.f), was = rating_at(pi[i], 1.f);
             if (!(ri > 0.f)) continue;
-            float want = was > 0.f ? goal * was / ri : goal, f = balance_factor(pi[i], want, 0.75f, 2.f);
+            float want = was > 0.f ? goal * was / ri : goal, f = balance_factor(pi[i], want, 1.f, 2.f);   /* (never below its own)  */
             int j = g_bal.n++;
             g_bal.car[j] = car[i]; g_bal.f[j] = f;
             balance_apply(j);

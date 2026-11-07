@@ -58,6 +58,8 @@ static int opt_num(const char *name, int def, int lo, int hi){
 
 static int g_ai_on;
 static uint32_t g_ai_race;
+static uint32_t g_ai_done;               /* the AI racers finished in this race: a bit each, by car id - 100 */
+static void report_install(void);
 static void names_install(void);
 static void put_rel(uint8_t *at, uint32_t target);
 typedef void (__attribute__((thiscall)) *cars_t)(uint32_t);
@@ -113,7 +115,7 @@ static void ai_add(void){
         roam_log("[ai]   AI racer %d: %s, grid place %d, skill %d (kind %u)\n", k + 1, nm[0] ? nm : "(no name)", freep[k], skill, MR32(r + REC_KIND));
     }
     MR32(G_AI_N) += (uint32_t)(n1 - n0);
-    if (n1 > n0){ g_ai_on = 1; g_ai_race = 0; }
+    if (n1 > n0){ g_ai_on = 1; g_ai_race = 0; g_ai_done = 0; }
     roam_log("[ai] the LAN race: %u AI racer(s) beside %d player(s) (AiRacers %d, AiSkill %d, difficulty %u, lobby %08x)\n",
              n1 - n0, humans, want, skill, MR32(G_DIFFICULTY), lid);
 }
@@ -142,17 +144,51 @@ static void ai_finish_frame(void){
     uint32_t n = MR32(race + 0x24u), laps = MR32(race + 0xbe8u);
     if (!laps || laps > 20u || n > 8u) return;
     for (uint32_t i = 0; i < n; i++){
-        uint32_t r = MR32(race + 0xbd0u + 4u * i), car = ok(r, 0x18) ? MR32(r) : 0;
-        if (!ok(car, 0x30) || (uint16_t)MR16(car + 0xau) < 100u) continue;
-        if (MR16(r + 0x10u) || MR8(r + 9u) < laps) continue;
+        uint32_t r = MR32(race + 0xbd0u + 4u * i), car = ok(r, 0x1d8) ? MR32(r) : 0;
+        if (!ok(car, 0x30)) continue;
+        uint16_t id = (uint16_t)MR16(car + 0xau);
+        if (id < 100u || id > 131u || (g_ai_done >> (id - 100u) & 1u) || MR16(r + 0x10u)) continue;
+        if (MR8(r + 9u) < laps && !(MRF32(r + 0x14u) >= (float)laps)) continue;
+        g_ai_done |= 1u << (id - 100u);
+        /* its time as FinishRacer's own cases give it (the world clock less the race's start, 0x606CF2) */
+        if (!MR32(r + 0x198u) && ok(0x0086518cu, 4)) MR32(r + 0x198u) = MR32(0x0086518cu) - MR32(race + 0x10u);
         uint32_t a[4] = { i, 0, 0, 1 };
         roam_win_call(FN_FINISH, race, 0, 4, a);
-        roam_log("[ai] an AI racer (car %04x) finished: %u laps, its place %u\n", (uint16_t)MR16(car + 0xau), laps, MR8(r + 0xcu));
+        roam_log("[ai] an AI racer (car %04x) finished: %u laps (%.3f), its place %u, %.2f s, kept %u\n", id, laps, (double)MRF32(r + 0x14u),
+                 MR8(r + 0xcu), (double)MR32(r + 0x198u) / 4000.0, MR16(r + 0x10u));
         return;
     }
 }
 /* roam_asi.c, each frame */
 void airacers_win_frame(void){ ai_finish_frame(); }
+
+/* The network's report of a racer's finish (0x602000, thiscall 0x89CF48 (car id, place, ..., how), ret 0x10): it looks the
+ * network player up by the car id and tells the others; with none (al 0) the finish is taken back (FinishRacer
+ * 0x606E8E, and the laps' and places' reports 0x607496, 0x607F7D, 0x608473, 0x6087B8 set +0x10 to 0 again).  An AI
+ * racer of ours is no network player: its report succeeds at once, nothing sent (the second try, 05:10: every finish
+ * of ours undone, every frame) */
+#define REPORT_FN   0x00602000u          /* mov eax,[esp+4]; push ebx; push ebp */
+static void report_install(void){
+    static const uint8_t want[6] = { 0x8b, 0x44, 0x24, 0x04, 0x53, 0x55 };
+    uint8_t *site = (uint8_t *)(uintptr_t)REPORT_FN, *t = g_page + 128;
+    DWORD old;
+    if (!ok(REPORT_FN, 6) || memcmp(site, want, 6)){ roam_log("[ai] the network's finish report (0x%08x) is not the game's: the AI racers may not finish\n", REPORT_FN); return; }
+    static const uint8_t code[] = { 0x8b, 0x44, 0x24, 0x04,      /* mov eax, [esp+4]: the car id */
+                                    0x83, 0xf8, 0x64,            /* cmp eax, 100 */
+                                    0x7c, 0x05,                  /* jl +5: the game's */
+                                    0xb0, 0x01,                  /* mov al, 1 */
+                                    0xc2, 0x10, 0x00,            /* ret 0x10 */
+                                    0x53, 0x55,                  /* push ebx; push ebp (the game's first bytes) */
+                                    0xe9 };                      /* jmp REPORT_FN + 6 */
+    memcpy(t, code, sizeof code);                                /* 0..16 */
+    put_rel(t + 17, REPORT_FN + 6u);
+    FlushInstructionCache(GetCurrentProcess(), t, 32);
+    if (!VirtualProtect(site, 6, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)t); site[5] = 0x90;
+    VirtualProtect(site, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 6);
+    roam_log("[ai] the network's finish report (0x%08x): an AI racer's finish is its own\n", REPORT_FN);
+}
 
 /* Their names on the results screen.  Its row of a racer other than our own player (0x4BF3C0) takes, in a network
  * race (0x5F00F0), the name of the network player with the row's car id (0x5F0220 +0x12), else the racer record's
@@ -209,4 +245,5 @@ void airacers_win_install(void){
     g_cars = (cars_t)(void *)t;
     roam_log("[ai] the race's car making (0x%08x) goes through the plugin: AI racers in LAN races\n", CARS_FN);
     names_install();
+    report_install();
 }
