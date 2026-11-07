@@ -146,6 +146,8 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_MOVIES",      "Movies",     "1" },  /* after a multiplayer win: the race's movie, as after a Solo one (0: none) */
     { "NFSU2_ROAM_AFKBOT",      "AfkBot",     "30" }, /* seconds without input before the game's AI drives the car (0: never) */
     { "NFSU2_ROAM_BONUSCASH",   "BonusCash",  ""  },  /* once per profile: this much into the career's bank (0 or empty: none) */
+    { "NFSU2_ROAM_CAREERPAYOUT", "CareerPayout", "100" },
+    { "NFSU2_ROAM_CAREERTRAFFIC", "CareerTraffic", "100" }, /* career races' traffic cars, in percent (100: the game's; 0: none) */ /* career races' purses, in percent (100: the game's; 200: double) */
     { "NFSU2_ROAM_CATCHUP",     "CatchUp",    "0" },  /* multiplayer races: 0 no catch-up (no rubber band), 1 the game's */
     { "NFSU2_ROAM_CAREERCATCHUP", "CareerCatchUp", "0" }, /* career races: 0 no catch-up (the AI does not slow down when it leads), 1 the game's */
     { "NFSU2_ROAM_TRAVELKEY",   "TravelKey",  "F7" }, /* fast travel: to the GPS destination in career free roam (0: none) */

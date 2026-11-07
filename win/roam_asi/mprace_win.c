@@ -624,6 +624,34 @@ static void pend_check(long f){
  * <the .ini's name>.bonus (one name a line).  The bank is in the career in memory: the game's next save keeps it (a
  * save before the game closes; the autosave at the next garage visit). */
 #define G_FLOW_MW       0x008654a4u   /* 6: in the world */
+/* ---- the career's purses, scaled (CareerPayout = percent; fix phase 7, a player's complaint: the grind) -------------
+ * Each career race's purse is its record's +0x30 in the race table ([0x8383E0], [0x8383E4] races of 0x88: Patrick's
+ * circuit 750, as its card says); the card shows it and the win pays it.  The table is the game's own data, made at
+ * the start, not the save: so each race's purse is kept as the game made it, and set to it x CareerPayout / 100 (a
+ * table made anew is kept anew; never scaled twice).  Only what a win pays lands in the save, as any money */
+#define PAYOUT_MAX 1024
+static void payout_frame(long f){
+    static int pct = -1; static uint32_t table, orig[PAYOUT_MAX]; static int n; static long at;
+    if (pct < 0){
+        const char *o = roam_opt("NFSU2_ROAM_CAREERPAYOUT"); pct = 0;
+        for (const char *p = o; p && *p >= '0' && *p <= '9' && pct < 100000; p++) pct = pct * 10 + (*p - '0');
+        if (pct <= 0) pct = 100;
+        if (pct != 100) roam_log("[mpcredit] CareerPayout = %d %%: the career races' purses x %d.%02d\n", pct, pct / 100, pct % 100);
+    }
+    if (pct == 100 || f - at < 60) return;
+    at = f;
+    uint32_t t = rd(G_RACES), nr = rd(G_NRACES);
+    if (!t || !nr || nr > PAYOUT_MAX || !roam_win_committed(t) || !roam_win_committed(t + nr * RACE_SZ - 1u)) return;
+    if (t != table || (int)nr != n){
+        table = t; n = (int)nr;
+        for (int i = 0; i < n; i++) orig[i] = MR32(t + (uint32_t)i * RACE_SZ + 0x30u);
+        roam_log("[mpcredit] f=%ld the career's %d races: purses kept as the game made them, set to x %d.%02d\n", f, n, pct / 100, pct % 100);
+    }
+    for (int i = 0; i < n; i++){
+        uint32_t want = (uint32_t)((uint64_t)orig[i] * (uint32_t)pct / 100u), *p = (uint32_t *)(uintptr_t)(t + (uint32_t)i * RACE_SZ + 0x30u);
+        if (*p != want) *p = want;
+    }
+}
 static void bonus_frame(long f){
     static int amount = -1; static long at;
     if (amount < 0){ const char *o = roam_opt("NFSU2_ROAM_BONUSCASH"); amount = 0; for (const char *p = o; p && *p >= '0' && *p <= '9' && amount < 10000000; p++) amount = amount * 10 + (*p - '0'); }
@@ -655,6 +683,7 @@ void mpcredit_frame(struct CPU *c){
     (void)c;
     if (!g_pend.loaded) pend_load();
     bonus_frame(roam_win_frame_no());
+    payout_frame(roam_win_frame_no());
     /* the sponsor question and the movie of a win; a question or a movie whose crib went away is dropped */
     if (g_ui.st != UI_NONE){
         int gone = rd(G_GAMEMODE) != 1u || ((g_ui.st == UI_OFFER || g_ui.st == UI_ASKED || (g_ui.st == UI_WAIT && !g_ui.leaving))

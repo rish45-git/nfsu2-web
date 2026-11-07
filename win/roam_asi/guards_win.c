@@ -104,12 +104,14 @@ static void addon_race_install(void){
 }
 
 /* roam_asi.c, at the start (with the plugin on) */
+static void traffic_install(void);
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
     uint8_t *site = (uint8_t *)(uintptr_t)SND_SITE;
     DWORD old;
     if (g_on) return;
     background_install();
+    traffic_install();
     addon_race_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
@@ -183,7 +185,58 @@ static void load_watch_install(void){
     roam_log("[guard] the resource loader (0x%08x): the cars' files a multiplayer race loads are logged\n", LOAD_FN);
 }
 /* roam_asi.c, each frame: the guard's count when it grew */
+/* ---- less traffic in career races (CareerTraffic = percent; fix phase 7, a player's complaint) ----------------------
+ * The race's traffic cars come from 0x4FE9F0 (the race's setups call it: 0x526956, 0x5324FA, 0x540424, 0x540718): its
+ * count is the track's table entry for the traffic level [0x89E7A8] (movsx edi, byte [... + level*2 + 0xEC]), at most
+ * 16 (cmp edi,0x10 at 0x4FEA51), and that many are added.  With a career race being set up ([0x863470], Career +0x8730)
+ * the count goes through traffic_count: x CareerTraffic / 100 (free roam and LAN races as the game has them).  No log
+ * in there (the game's floating point, phase 6): guards_win_frame writes it */
+#define TRAFFIC_SITE 0x004fea51u         /* cmp edi,0x10; jl 0x4FEA5B */
+#define TRAFFIC_ON   0x004fea5bu
+static volatile int g_traffic_pct = 100, g_traffic_from = -1, g_traffic_to = -1;
+static int __attribute__((cdecl, used)) traffic_count(int n){
+    if (g_traffic_pct == 100 || !MR32(0x00863470u)) return n;
+    int m = n * g_traffic_pct / 100;
+    g_traffic_from = n; g_traffic_to = m < 16 ? m : 16;
+    return m;
+}
+static void traffic_install(void){
+    static const uint8_t want[5] = { 0x83, 0xff, 0x10, 0x7c, 0x05 };
+    uint8_t *site = (uint8_t *)(uintptr_t)TRAFFIC_SITE, *t = g_page + 256;
+    DWORD old;
+    const char *v = roam_opt("NFSU2_ROAM_CAREERTRAFFIC");
+    int pct = 100; if (v && *v >= '0' && *v <= '9'){ pct = 0; for (; *v >= '0' && *v <= '9' && pct < 1000; v++) pct = pct * 10 + (*v - '0'); }
+    if (pct == 100) return;
+    if (!ok(TRAFFIC_SITE, sizeof want) || memcmp(site, want, sizeof want)){
+        roam_log("[guard] the race's traffic count (0x%08x) is not the game's (another mod?): CareerTraffic not applied\n", TRAFFIC_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint8_t *q = t;
+    *q++ = 0x60;                                                   /* pushad */
+    *q++ = 0x57;                                                   /* push edi (the count) */
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)traffic_count); q += 4;
+    *q++ = 0x83; *q++ = 0xc4; *q++ = 0x04;                         /* add esp, 4 */
+    *q++ = 0x89; *q++ = 0x04; *q++ = 0x24;                         /* mov [esp], eax: pushad's edi */
+    *q++ = 0x61;                                                   /* popad */
+    *q++ = 0x83; *q++ = 0xff; *q++ = 0x10;                         /* cmp edi, 0x10 */
+    *q++ = 0x0f; *q++ = 0x8c; put_rel(q, TRAFFIC_ON); q += 4;      /* jl 0x4FEA5B */
+    *q++ = 0xbf; *q++ = 0x10; *q++ = 0; *q++ = 0; *q++ = 0;        /* mov edi, 16 */
+    *q++ = 0xe9; put_rel(q, TRAFFIC_ON); q += 4;                   /* jmp 0x4FEA5B */
+    FlushInstructionCache(GetCurrentProcess(), t, (SIZE_T)(q - t));
+    if (!VirtualProtect(site, sizeof want, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)t);
+    VirtualProtect(site, sizeof want, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, sizeof want);
+    g_traffic_pct = pct;
+    roam_log("[guard] CareerTraffic = %d %%: a career race's traffic cars x %d.%02d (0x%08x)\n", pct, pct / 100, pct % 100, TRAFFIC_SITE);
+}
+
 void guards_win_frame(void){
+    if (g_traffic_from >= 0){
+        roam_log("[guard] a career race's traffic: %d car(s) -> %d (CareerTraffic = %d %%)\n", g_traffic_from, g_traffic_to, g_traffic_pct);
+        g_traffic_from = -1;
+    }
     LONG d = g_desc_hits;
     if (d != g_desc_logged){ g_desc_logged = d; roam_log("[guard] AddOnStockRace: an add-on car's LAN description went with stock parts (%ld so far)\n", (long)d); }
     LONG n = g_snd_hits;

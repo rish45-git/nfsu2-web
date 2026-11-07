@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `3c1247d1` (fix phases 3-4's log lines). The desktop runs `3c1247d1` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `d227b74a` (fix phase 7). The desktop runs `d227b74a` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -113,12 +113,18 @@ reads this file first:**
      rounds, so not kept (reverted; 3c1247d1 again, its start checked clean). For Fable: why the thread's floating
      point traps after a second device (ReShade's d3d9.dll and scripts\ReShade.asi both load), or retry before
      the first CreateDevice (wait for the display at 0x5D2740), or leave it (it only hits an unattended start).
-7. **Fix phase 7 (Opus): Ideas from players' complaints:**
-   - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
-     0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
-     Needs a race win to test;
-   - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
-
+7. **Fix phase 7 (Opus): Ideas from players' complaints: DONE (12:31), build d227b74a, desktop CareerPayout = 200,
+   CareerTraffic = 50 (the repo's ini 100 / 100: off).**
+   - **CareerPayout** (percent, mprace_win.c payout_frame): each career race's purse is its race record's +0x30
+     ([0x8383E0], 224 races of 0x88; Patrick's circuit 750): kept as the game made it and set to x pct / 100 (the
+     table is the game's data, not the save). The win pays it: 0x5414D7 `mov ecx,[edi+0x30]; add [Career+0x7134]`
+     (edi the race), or 0x541497 via 0x532E50, which returns [race+0x30] too, except a kind-1 race (+0x34 = 1,
+     the 8000s) with a stage reward: that pays the reward's word, unscaled. The card showed "Purse: 1,500". A win
+     not raced (the plugin's race bot drives only multiplayer races).
+   - **CareerTraffic** (percent, guards_win.c): the race's traffic cars come from 0x4FE9F0 (the track's table
+     entry for [0x89E7A8], at most 16, cmp edi,0x10 at 0x4FEA51); a stub there scales the count while a career race
+     is set up ([0x863470]). "a career race's traffic: 12 car(s) -> 6". No log inside the hook (phase 6's floating
+     point): guards_win_frame writes it.
 8. **Fix phase 8 (Opus): Rising AI racers, and new names each race** (Rishi's spec, 2026-11-07 ~11:00; the AI
    racers in LAN races only, airacers_win.c, on each PC its own):
    - only while a human leads the race. Every AI racer 15 s or more behind that leader gets a set: acceleration
