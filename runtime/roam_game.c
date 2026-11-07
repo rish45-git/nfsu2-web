@@ -6533,6 +6533,7 @@ static MpLobby *mp_far_pick(int64_t host){
 }
 static const char *mp_join_key(void){ const char *k = rh_opt("NFSU2_ROAM_JOINKEY"); return k && *k && strcmp(k, "0") ? k : 0; }
 void roam_win_lobby_push(int act, uint32_t a, uint32_t b, uint32_t r);    /* roam_win.c: roam_plat_lobby_act's queue */
+int roam_keys_front_for(unsigned ms);                                        /* roam_keys.c: the game in front that long */
 /* the JoinKey (the game's thread, the frame hook's hotkeys): join the lobby offered on the top line from afar, or
  * leave the one joined from afar */
 void roam_game_join_key(void){
@@ -6717,6 +6718,11 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
         for (int k = 0; k < 8 && (act = roam_plat_lobby_act(&a, &b, &r)) != ROAM_LB_NONE; k++) mp_act(host, in_roam, act, a, b, r);
     }
     int eng = in_roam && world_runs && !(rd32(G_ACTIONS) & (1u << ACT_ENGAGE));
+#ifdef ROAM_HOST_WIN
+    /* (Engage only with the game's window in front for half a second: around a change of the window in front the
+     * desktop's lobby went to its countdown as by Enter with nobody at the keys, 2026-11-07 06:41) */
+    if (!roam_keys_front_for(500)) eng = 0;
+#endif
     int press = eng && !g_mp.engage;
     g_mp.engage = eng;
 #ifdef ROAM_HOST_WIN

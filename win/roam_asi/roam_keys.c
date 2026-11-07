@@ -183,6 +183,7 @@ static int g_user_ok;
 #define HOTKEYS 4
 static struct { int vk; int held; void (*fn)(void); const char *what; } g_hk[HOTKEYS];
 static int g_nhk;
+static DWORD g_front_since;                  /* GetTickCount since the game's window is in front (0: not) */
 /* "F1".."F24", a letter or a digit; 0 none */
 int roam_keys_vk(const char *s){
     if (!s || !*s) return 0;
@@ -219,14 +220,26 @@ static void hotkeys_frame(void){
         if (p_gaks && p_gfw && p_gwtp) g_user_ok = 1;
         else roam_log("[keys] no user32 key functions: the plugin's hotkeys are off\n");
     }
-    if (g_user_ok != 1 || !g_nhk) return;
+    if (g_user_ok != 1) return;
     int front = game_in_front();
+    /* the game's window back in front: a key already down then is not a press (2026-11-07 06:41: the laptop's J went
+     * off by itself as its game came back in front, a key-up lost in a remote session's input, and joined a lobby);
+     * a hotkey is a key pressed while the game is in front */
+    static int was_front;
+    DWORD now = GetTickCount();
+    if (front && !was_front) g_front_since = now;
+    if (!front) g_front_since = 0;
+    int fresh = front && !was_front;
+    was_front = front;
     for (int i = 0; i < g_nhk; i++){
         int down = front && (p_gaks(g_hk[i].vk) & 0x8000);
+        if (fresh){ if (down) roam_log("[keys] %s: its key was down as the game came in front: not a press\n", g_hk[i].what); g_hk[i].held = down; continue; }
         if (down && !g_hk[i].held){ roam_log("[keys] %s\n", g_hk[i].what); g_hk[i].fn(); }
         g_hk[i].held = down;
     }
 }
+/* the game's window has been in front for ms at least (roam_game.c: the lobby's Engage, as the hotkeys) */
+int roam_keys_front_for(unsigned ms){ if (g_user_ok != 1) return 1; return g_front_since && GetTickCount() - g_front_since >= ms; }   /* (no user32: as before) */
 
 /* every frame, from the frame hook */
 void roam_keys_frame(void){
