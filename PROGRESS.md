@@ -8,7 +8,31 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
-## Where to resume (2026-11-07 13:30)
+## Where to resume (2026-11-07 16:20, Fable; phases 9 and 10 done, the stick holds d1fed18c)
+
+- **Done, fix phase 9** (commits 542b85f6, 68a234ca, 7e514c50): the 0x5CE83E crash was the game freeing the Cars pool's
+  extra block (0x63A6F0 at the track's unload) with friends' rides still in it: the Windows plugin never had the port's
+  hooks of 0x63A6F0 / 0x610750 (guards_win.c carpool_install now; roam_game_loader_release built for Windows).
+  Reproduced on the desktop with a roambot's stock SENTRAB12 (14:10, 14:17), fixed (two quit cycles clean, 14:26). The
+  0x4405CF crash is the same root (a double-owned block). ModelCheck (ini) walks the model lists at world changes.
+  The 0x1D2780 start: guards_win.c devguard_install waits for a display big enough, ends a running screen saver (the
+  desktop's own case at 14:36-14:53: input desktop "Screen-saver" -> CreateDevice D3DERR_INVALIDCALL), keeps the display
+  awake, tries CreateDevice again after a wake-up, and otherwise shows a message and exits. tools/dumpstack.py reads a
+  minidump without a debugger.
+- **Done, fix phase 10** (7e514c50): GpsBot = 1: the AFK bot follows the GPS. Hook at 0x41EC20 (the AI path builder's
+  next-road choice; a1 -> the lane, a2 -> its node, a3 the node index, a4 the link, a5 the direction byte, a6 the
+  brain); the plugin answers from a Dijkstra over (lane, node, direction) on the AI lanes (0x88A334; nodes 0x38 bytes
+  at +0x8C, x/y floats at +0/+4, links at +0x1C/+0x1E, count +0x34). Arrival within 40 m turns the GPS off. Tried
+  16:13 on the desktop: arrived after 2.9 km (6 traffic hits, 2 pinned resets). The map's GPS Yes/No defaults to No
+  (Left, Enter). Not done: sharing the GPS target between players.
+- **The stick and C:\dev\laptop-update hold d1fed18c** (sums verified, 50 files); the laptop still runs 825c3aa1
+  until Rishi OKs the install in the laptop session. The desktop runs d1fed18c with AddOnStockLook = 0 still (set it
+  to 1 now that the crash is fixed). ModelCheck = 1 on the desktop.
+- **Next (Rishi's task 4): fix phase 8 in a real race** (desktop hosting, laptop joining, both on d1fed18c): a human
+  leads by 15 s, the log's "[ai] rising:" lines, the stop after an overtake, the restart at 15 s behind, "sets taken
+  off" at the end; ask Rishi whether sets should add up (now) or multiply.
+
+## Where to resume (2026-11-07 13:30, superseded)
 
 **State:**
 
