@@ -21,6 +21,7 @@
 
 void roam_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 const char *roam_opt(const char *name);
+int roam_win_committed(uint32_t a);              /* roam_asi.c: VirtualQuery, cached */
 
 #define G_KBD           0x0086e5c0u   /* the game's keyboard device (IDirectInputDevice8A *) */
 #define G_ACTFMT        0x0086f348u   /* its four DIACTIONFORMATs, 0x148 bytes each */
@@ -172,6 +173,40 @@ void roam_keys_mute(int on){
         roam_log("[keys] the player's keys %s\n", on ? "go to the race trip now (it drives the game's menus)" : "are the player's again");
 }
 
+/* ---- the game reads its devices in the background while the plugin has keys for it --------------------------------
+ * The game's input update (0x5CFD60, once a frame) reads its devices (0x5CF220 on each of 0x874C40 + 0x370 n: the
+ * keyboard's 0x5C1840 and its GetDeviceData among them) only while its window is active ([0x870988], the je at
+ * 0x5CFDE4).  With RunInBackground the game runs on behind another window, but a race trip's taps (the LAN menu's
+ * Left x8, Enter) were never read there: the laptop's trip stood 57 s at "the career car" until its window came back
+ * in front (fix phase 2, 2026-11-07 09:49).  So while the trip drives (the player's keys muted) or taps wait, the
+ * update reads its devices anyway: its first instruction, mov eax,[0x870988], goes to a stub that ors in g_bg_read.
+ * A lost device's read hands out the plugin's taps (hk_getdata); the game's own events are muted then. */
+#define BG_SITE 0x005cfdabu                      /* mov eax,[0x870988]; then test eax,eax */
+static volatile uint32_t g_bg_read;
+static uint8_t g_bg_stub[32] __attribute__((aligned(16)));
+static void bg_read_install(void){
+    static const uint8_t want[7] = { 0xa1, 0x88, 0x09, 0x87, 0x00, 0x85, 0xc0 };
+    uint8_t *site = (uint8_t *)(uintptr_t)BG_SITE, *t = g_bg_stub;
+    DWORD old;
+    if (!roam_win_committed(BG_SITE) || !roam_win_committed(BG_SITE + sizeof want) || memcmp(site, want, sizeof want)){
+        roam_log("[keys] the input update (0x%08x) is not the game's (another mod?): a race trip waits while the game is in the background\n", BG_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_bg_stub, sizeof g_bg_stub, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint32_t flag = (uint32_t)(uintptr_t)&g_bg_read;
+    int32_t back = (int32_t)((BG_SITE + 5u) - ((uint32_t)(uintptr_t)t + 16u));
+    memcpy(t, site, 5);                                            /* mov eax,[0x870988] */
+    t[5] = 0x0b; t[6] = 0x05; memcpy(t + 7, &flag, 4);             /* or eax,[g_bg_read] */
+    t[11] = 0xe9; memcpy(t + 12, &back, 4);                        /* jmp 0x5CFDB0 */
+    FlushInstructionCache(GetCurrentProcess(), t, 16);
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    int32_t to = (int32_t)((uint32_t)(uintptr_t)t - (BG_SITE + 5u));
+    site[0] = 0xe9; memcpy(site + 1, &to, 4);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    roam_log("[keys] the input update (0x%08x): read in the background too while a race trip drives the menus\n", BG_SITE);
+}
+
 /* ---- hotkeys ---------------------------------------------------------------------------------------- */
 typedef short (__stdcall *GetAsyncKeyState_t)(int vk);
 typedef HWND  (__stdcall *GetForegroundWindow_t)(void);
@@ -276,8 +311,12 @@ int roam_keys_front_for(unsigned ms){ if (g_user_ok != 1) return 1; return g_fro
 /* every frame, from the frame hook */
 void roam_keys_frame(void){
     if (!g_mu_ok){ InitializeCriticalSection(&g_mu); g_mu_ok = 1; }
+    static int bg_done;
+    if (!bg_done){ bg_done = 1; bg_read_install(); }
     hook_frame();
     hotkeys_frame();
+    uint32_t want = (g_mute || g_qn > 0) ? 1u : 0u;              /* (the trip drives, or taps wait: read in the background) */
+    if (want != g_bg_read){ g_bg_read = want; if (want && !game_in_front()) roam_log("[keys] the game's window is not in front: its devices are read anyway, for the race trip's keys\n"); }
 }
 void roam_keys_report(void){
     if (g_taps || g_unmapped || g_muted_events)
