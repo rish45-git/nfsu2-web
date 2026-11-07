@@ -187,7 +187,12 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     desktop drew the laptop's COROLLA whole but silver (stock), not its paint. The car files and UnlimiterData are the
     same on both PCs (SHA-256 compared). The suspect is the Unlimiter's `ForceStockPartsOnAddOnOpponents = 0` ("to fix
     Missing Parts on Opponents' Cars"; a LAN race spawns the other player as an opponent). To try: 1 on both PCs.
-  - The race AFK bot (commit feba7c8e) is built, not installed.
+  - The race AFK bot (commit feba7c8e, build 92e95660…) and `ForceStockPartsOnAddOnOpponents = 1` are installed on the
+    desktop (02:30; backups out/win/backup/*.before-racebot, *.before-forcestock) and on the USB stick for the laptop;
+    the laptop keeps `AllNewCarsInitiallyUnlocked = 0`. Not tried yet.
+  - **The free-roam bot drives badly** (the player, 02:27): into walls and traffic. The game's autopilot has no route
+    in free roam. Next: give it a free-roam AI racer's "cruise the city" job (the encounter racers drive the roads
+    well), and as a quick test the traffic driver (0x5EBA30 with 4).
 - Not tried in the game: the rest of these. The README in `C:\dev\laptop-update` gets them when the build is installed.
 
 **Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
