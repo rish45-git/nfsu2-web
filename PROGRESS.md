@@ -8,15 +8,14 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
-## Where to resume (2026-11-07 09:30)
+## Where to resume (2026-11-07 09:55)
 
 **State:**
 
-- **Builds:** the repo builds `c887a807` (a8353e0c). The desktop runs `e3cc8f3b` (15369e81: the results-screen fix,
-  with 1555ce8c's hotkey AFK fix) with `AddOnStockLook = 0`, `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs
-  `c212de5c` with `AiRacers = 0` (set by its session at 09:09). `C:\dev\laptop-update` holds `1555ce8c` with the
-  laptop's ini (`AiRacers = 0`) and a README note, `sha256sum -c` all OK; the stick itself is still in the laptop
-  with `c212de5c`.
+- **Builds:** the repo builds `825c3aa1` (bba7aad4). The desktop runs `825c3aa1` with `AddOnStockLook = 0`,
+  `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `81a6a3d8` (6038e3ff, from the stick at 09:42, Rishi's OK
+  in the laptop session) with `AiRacers = 0`. The stick (`laptop-update`, also `C:\dev\laptop-update`) holds
+  `81a6a3d8`, verified on the stick (50 files) and on the laptop.
 - **Remote Control works** in this session (2026-11-07 08:45 chat): the laptop's session answers by SendMessage.
 - **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy for
   192.168.0.109/100.76.38.37:8691 didn't listen (not even after Rishi restarted IP Helper): a user-mode forwarder
@@ -32,15 +31,23 @@ says native clients are welcome there.
 - **Fixed, the host's results screen** (e3cc8f3b): rows 3-4 were the screen's placeholders ("WWWWWWWWWWWWWWWW",
   Lancer EVO VIII, Escalade, place 6, "Opgeblazen motor"): the row filler 0x4BF290 (called from 0x4D7240) makes as
   many rows as [0x89E7C0]+[0x89E7C4]+[0x89E7C8]+[0x89E7CC], and our results trim had lowered the AI count first.
-  Being checked in the 09:24 race.
-- **Open, Rishi: "the bots' vehicles aren't visible"** (the AI racers on the desktop). They do drive the route (the
-  09:18 results: 7.7-9.2 km, 35 m/s average); they left the line while our car stood. To check: a grid screenshot
-  in the countdown.
+  Checked in the 09:24 race: all 4 rows right (ChatGPT, Claude, RishiLaptop 5:01.47, Rishi 5:28.65).
+- **Fixed, the AI racers' cars weren't drawn** (Rishi: "the bots' vehicles aren't visible"; 09:32 a screenshot at
+  2.75 s, the two Corollas 0.4 s ahead, nothing on the road). The race asks the car loader for each record's car in
+  a loop over [0x89E814] (0x57F673..0x57F6F0, rec+0x8F8 the handle) before the track load makes the cars at
+  0x6065B0, where ours were added: their models were never loaded. 6038e3ff adds them at 0x57F673 (a stub), which
+  gave them grid places 1-2 the players take later (09:45: "2nd /2", no AI at all); bba7aad4 moves them to the free
+  places at 0x6065B0. 09:50 (825c3aa1): records 0-1 the players at places 2 and 1, 2-3 the AI at 3 and 4, and
+  Rishi's screenshot at 0.06 s shows both AE86 Corollas on the grid.
+- **Found, the trip stalls in the background:** on the laptop the LAN-menu step from "the career car" to "join the
+  game" waited 57 s with its window behind another (RunInBackground on, 30 fps), and went on 0.9 s after the window
+  came to the front (09:49:53). The host waited in its room meanwhile. Not looked into.
+- **Rishi's rule (09:35):** quit races and close games once a test has its answer; test saves don't matter.
 
 **Next, in order:**
 
-1. The AI racers' cars on screen (above); the results screen with e3cc8f3b.
-2. **Install** the newest build on both PCs via the stick (it needs to come back to the desktop).
+1. The trip's background stall (above); the 0x5CE83E crash (AddOnStockLook = 1), with the laptop's two dumps.
+2. Put `825c3aa1` (or newer) on the stick for the laptop at the next install.
 3. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
 4. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
