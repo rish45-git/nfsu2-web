@@ -8,7 +8,7 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
-## Where to resume (2026-11-07 16:20, Fable; phases 9 and 10 done, the stick holds d1fed18c)
+## Where to resume (2026-11-07 18:30, Fable; phases 9, 10 and task 4 done; the friend's package on the Desktop)
 
 - **Done, fix phase 9** (commits 542b85f6, 68a234ca, 7e514c50): the 0x5CE83E crash was the game freeing the Cars pool's
   extra block (0x63A6F0 at the track's unload) with friends' rides still in it: the Windows plugin never had the port's
@@ -41,9 +41,16 @@ says native clients are welcome there.
   is worth asking Rishi about, with his add-up / multiply question. C:\dev\laptop-update holds cb96377c (the stick is
   in the laptop, not updated yet). Lesson: the host must not quit its game before the other PC has finished (race 2 was
   cut 0.01 lap from the laptop's line that way).
-- **Next, Rishi's call:** sets add up (now) or multiply, and a cap; then the stick gets cb96377c when it is back. (desktop hosting, laptop joining, both on d1fed18c): a human
-  leads by 15 s, the log's "[ai] rising:" lines, the stop after an overtake, the restart at 15 s behind, "sets taken
-  off" at the end; ask Rishi whether sets should add up (now) or multiply.
+- **Rishi's decision (2026-11-07, evening): the sets keep adding up, NO cap.** The code already does that; nothing to change.
+- **Done: the friend's package** at C:\Users\V2\Desktop\New folder (4): NFSU2-online (a robocopy of C:\Games\NFSU2-online,
+  4.3 GB, exe identical, no SAVEGAMES / logs / backups), its scripts\NFSU2FreeRoam.ini preset (Name blank, Server =
+  ws://100.76.38.37:8691/lan, Servers blank, Partner = Rishi, keys blank, GpsBot = 1, cb96377c), and README.txt (quick
+  start, connecting to Rishi, playing, hosting a race, hosting the server in WSL, keys, trouble, and a "for Rishi"
+  part on giving him an address: ngrok tunnel or a Tailscale share). The Rust server does not build natively on
+  Windows (crates/util cpu.rs / logfile.rs are Unix-only: getrusage, std::os::unix mode()), so "host" for the friend
+  means WSL; a Windows build of the server would be the way to make him a real click-and-play host.
+- **Next:** the stick (now in the desktop) and the laptop get cb96377c; Rishi picks ngrok or a Tailscale share for
+  the friend; later: GPS target sharing between players, and a smoother gap measure across laps for the rising rule.
 
 ## Where to resume (2026-11-07 13:30, superseded)
 
