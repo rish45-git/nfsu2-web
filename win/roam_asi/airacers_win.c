@@ -88,7 +88,29 @@ static void ai_add(void){
         if (kind == 2u) ai++;
         if ((kind == 1u || kind == 2u) && keep3[i] >= 1 && keep3[i] <= GRID_N) used[keep3[i]] = 1;
     }
-    if (ai){ roam_log("[ai] the race has %d AI racer(s) already: none added\n", ai); return; }
+    if (ai){
+        /* ours, added before the cars' loading (ai_preload) when the players had no grid place yet, took places 1 and 2
+         * (09:45: the race then had the two players only, "2nd /2", no AI): here the players' places are set, so ours
+         * get the free ones, in order */
+        int fp[GRID_N], nf = 0, k = 0, moved = 0;
+        for (int p = 1; p <= GRID_N; p++){
+            int u = 0;
+            for (uint32_t i = 0; i < n0; i++){ uint32_t r = recs + i * REC_SZ; if (MR32(r + REC_KIND) == 1u && MR8(r + REC_GRID) == (uint32_t)p) u = 1; }
+            if (!u) fp[nf++] = p;
+        }
+        for (uint32_t i = 0; i < n0 && k < nf; i++){
+            uint32_t r = recs + i * REC_SZ;
+            if (MR32(r + REC_KIND) != 2u || MR8(r + 1u) < 100u) continue;
+            if (MR8(r + REC_GRID) != (uint32_t)fp[k]){ MR8(r + REC_GRID) = (uint8_t)fp[k]; moved++; }
+            k++;
+        }
+        roam_log("[ai] the race has %d AI racer(s) already: none added; %d of ours moved to the grid's free places\n", ai, moved);
+        for (uint32_t i = 0; i < n0; i++){
+            uint32_t r = recs + i * REC_SZ;
+            roam_log("[ai]   record %u: kind %u, grid place %u, id %u, car type %u\n", i, MR32(r + REC_KIND), MR8(r + REC_GRID), MR8(r + 1u), MR32(r + 0x10u));
+        }
+        return;
+    }
     int freep[GRID_N], nfree = 0;
     for (int p = 1; p <= GRID_N; p++) if (!used[p]) freep[nfree++] = p;
     int n = want < nfree ? want : nfree;
