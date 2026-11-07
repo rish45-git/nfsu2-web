@@ -46,11 +46,11 @@ says native clients are welcome there.
   4.3 GB, exe identical, no SAVEGAMES / logs / backups), its scripts\NFSU2FreeRoam.ini preset (Name blank, Server =
   ws://100.76.38.37:8691/lan, Servers blank, Partner = Rishi, keys blank, GpsBot = 1, cb96377c), and README.txt (quick
   start, connecting to Rishi, playing, hosting a race, hosting the server in WSL, keys, trouble, and a "for Rishi"
-  part on giving him an address: ngrok tunnel or a Tailscale share). The Rust server does not build natively on
+  part: Rishi's choice is a Tailscale share of v2; the ini's ws://100.76.38.37:8691/lan stands). The Rust server does not build natively on
   Windows (crates/util cpu.rs / logfile.rs are Unix-only: getrusage, std::os::unix mode()), so "host" for the friend
   means WSL; a Windows build of the server would be the way to make him a real click-and-play host.
-- **Next:** the stick (now in the desktop) and the laptop get cb96377c; Rishi picks ngrok or a Tailscale share for
-  the friend; later: GPS target sharing between players, and a smoother gap measure across laps for the rising rule.
+- **Next:** the stick (now in the desktop) and the laptop get cb96377c; Rishi shares v2 with the friend in the Tailscale admin and sends the invite; the friend installs Tailscale,
+  accepts, plays; later: GPS target sharing between players, and a smoother gap measure across laps for the rising rule.
 
 ## Where to resume (2026-11-07 13:30, superseded)
 
