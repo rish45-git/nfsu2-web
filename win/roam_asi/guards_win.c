@@ -25,6 +25,7 @@ static LONG g_snd_logged;
 static int g_on;
 
 static uint8_t g_page[4096] __attribute__((aligned(4096)));
+static void load_watch_install(void);
 
 static void put_rel(uint8_t *at, uint32_t target){ int32_t r = (int32_t)(target - ((uint32_t)(uintptr_t)at + 4u)); memcpy(at, &r, 4); }
 
@@ -62,6 +63,48 @@ void guards_win_install(void){
     FlushInstructionCache(GetCurrentProcess(), site, sizeof want);
     g_on = 1;
     roam_log("[guard] the sound banks' lookup (0x%08x): a sound whose bank is gone no longer crashes the game\n", SND_SITE);
+    load_watch_install();
+}
+/* ---- what the game loads of the cars while a multiplayer race loads (a diagnostic; the player's list, item 7) ------
+ * In a LAN race the laptop drew the desktop's SENTRAB12 (an Unlimiter add-on car, type 50) as its spoiler alone, while
+ * the desktop drew the laptop's COROLLA (a stock car, type 2) whole; in free roam the plugin loads the SENTRAB12 fine.
+ * So the race's loading is watched: each CARS file the game asks the resource loader for (0x57CFB0, cdecl: the file's
+ * name first) from the trip's way into the LAN race to the race's end is logged ("[guard] the race loads ..."), at
+ * most 200 lines a race.  The call goes on to the game's as it was. */
+#define LOAD_FN 0x0057cfb0u
+int mprace_phase(void);                     /* runtime/mprace.c: 2 on the way into the LAN race, 3 the race */
+typedef uint32_t (__attribute__((cdecl)) *load_t)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+static load_t g_load;
+static int g_load_logged, g_load_phase;
+static uint32_t __attribute__((cdecl)) hk_load(uint32_t file, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5){
+    int ph = mprace_phase();
+    if (ph != g_load_phase){ g_load_phase = ph; if (ph == 2) g_load_logged = 0; }
+    if ((ph == 2 || ph == 3) && g_load_logged < 200 && ok(file, 6)){
+        char nm[72]; int i = 0;
+        for (; i < 71 && ok(file + (uint32_t)i, 1) && MR8(file + (uint32_t)i) >= 0x20 && MR8(file + (uint32_t)i) < 0x7f; i++) nm[i] = (char)MR8(file + (uint32_t)i);
+        nm[i] = 0;
+        if ((nm[0] == 'C' || nm[0] == 'c') && (nm[1] == 'A' || nm[1] == 'a') && (nm[4] == 0x5c || nm[4] == '/')){
+            g_load_logged++;
+            roam_log("[guard] the race loads %s (trip phase %d)\n", nm, ph);
+        }
+    }
+    return g_load(file, a1, a2, a3, a4, a5);
+}
+static void load_watch_install(void){
+    static const uint8_t want[6] = { 0x8b, 0x4c, 0x24, 0x0c, 0x33, 0xc0 };   /* mov ecx, [esp+0xc]; xor eax, eax */
+    uint8_t *site = (uint8_t *)(uintptr_t)LOAD_FN;
+    DWORD old;
+    if (!ok(LOAD_FN, 6) || memcmp(site, want, 6)){ roam_log("[guard] the resource loader (0x%08x) is not the game's: its race loads not logged\n", LOAD_FN); return; }
+    uint8_t *t = g_page + 64;                                      /* (the sound guard's code is in the first 42 bytes) */
+    memcpy(t, site, 6);
+    t[6] = 0xe9; put_rel(t + 7, LOAD_FN + 6u);
+    FlushInstructionCache(GetCurrentProcess(), t, 16);
+    if (!VirtualProtect(site, 6, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)hk_load); site[5] = 0x90;
+    VirtualProtect(site, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 6);
+    g_load = (load_t)(void *)t;
+    roam_log("[guard] the resource loader (0x%08x): the cars' files a multiplayer race loads are logged\n", LOAD_FN);
 }
 /* roam_asi.c, each frame: the guard's count when it grew */
 void guards_win_frame(void){
