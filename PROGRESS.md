@@ -175,7 +175,20 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   - Unlocks on the desktop: ExtraOptions' `UnlockAllThings = 1` ([Gameplay]) was already on; now also the Unlimiter's
     `AllNewCarsInitiallyUnlocked = 1` (the add-on cars; the old settings in out/win/backup).
   - The save file itself was not edited: it carries a 16-byte check value that is not an MD5 of its data.
-- Not tried in the game: all of these. The README in `C:\dev\laptop-update` gets them when the build is installed.
+- **Tried in the game, 2026-11-07 02:14-02:21** (both PCs on 7b8c11da):
+  - **BonusCash works:** the desktop's bank went from $500 to $2500 at 02:16.
+  - **The AFK bot works in free roam:** the laptop was taken over after 30 s (driver 3) and given back by a key after
+    32 s. That key was J, which also joined the desktop's lobby in the same frame. How the bot drives was not reported.
+  - **Quit notices work:** the desktop host quit a 3-lap circuit (STAGE_1_CIRCUIT_1) from its pause menu, the laptop
+    heard it at once, and 3.6 s later won as the last one in (place 1, it counts; $725 -> $1125 with the top-up). The
+    quitter paid its $75 fee.
+  - **ToHost works again:** 873 m. The way back had no stuck wait.
+  - **Found, Unlimiter add-on cars in a LAN race:** the laptop drew the desktop's SENTRAB12 as only its spoiler, and the
+    desktop drew the laptop's COROLLA whole but silver (stock), not its paint. The car files and UnlimiterData are the
+    same on both PCs (SHA-256 compared). The suspect is the Unlimiter's `ForceStockPartsOnAddOnOpponents = 0` ("to fix
+    Missing Parts on Opponents' Cars"; a LAN race spawns the other player as an opponent). To try: 1 on both PCs.
+  - The race AFK bot (commit feba7c8e) is built, not installed.
+- Not tried in the game: the rest of these. The README in `C:\dev\laptop-update` gets them when the build is installed.
 
 **Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
 - free roam online with names over cars (`Labels`) and the HUD's top line natively;
