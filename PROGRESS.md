@@ -67,7 +67,7 @@ says native clients are welcome there.
   AGO..." movie) plays with the plugin off and on. The later story scenes (stage ends) are not checked.
 
 **Next: the fix phases, in order (Rishi's list, 2026-11-07 ~10:45; "fix phase" so they don't mix with the build
-phases 0-6 below). Opus on high for phases 1-7; Fable for 8 and 9, the hardest (a crash dump's double unload; a
+phases 0-6 below). Opus on high for phases 1-8; Fable for 9 and 10, the hardest (a crash dump's double unload; a
 GPS driver of our own), or for any phase Opus circles on twice. Rishi starts a new chat with Fable for those: it
 reads this file first:**
 
@@ -91,7 +91,21 @@ reads this file first:**
      Needs a race win to test;
    - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
 
-8. **Fix phase 8 (Fable): The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
+8. **Fix phase 8 (Opus): Rising AI racers, and new names each race** (Rishi's spec, 2026-11-07 ~11:00; the AI
+   racers in LAN races only, airacers_win.c, on each PC its own):
+   - only while a human leads the race. Every AI racer 15 s or more behind that leader gets a set: acceleration
+     +10 %, top speed +10 %, handling (tyre grip) +15 %;
+   - then every 5 s: an AI racer that did not close at least 2 s on the leader in those 5 s gets another set; no
+     maximum;
+   - once it overtakes the leading human: no more sets, and it keeps the ones it has; if it falls back (rammed),
+     sets start again only once it is 15 s behind again;
+   - at the finish all sets are removed (the next race starts from the cars as the game and the balance make them);
+   - the gap: the race's own intervals (the HUD's); the sets on top of the start balance (mprace.c);
+   - first test whether the game takes a power / top speed / grip change mid-race; if it reads them once at the
+     start, re-apply them every 3-5 s (the game's own recompute), or hook where they are read;
+   - names: a random pick from Claude, ChatGPT, Gemini, DeepSeek each race (today racer 1 is always Claude, 2 always
+     ChatGPT), seeded from the lobby so every PC of the race shows the same.
+9. **Fix phase 9 (Fable): The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
    that Rishi drives the Supra (a stock car).
    **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
    the server went away (the desktop rebooted at 08:36; "Rishi left: timeout" 08:34:50, "switch: cannot reach the
@@ -105,7 +119,7 @@ reads this file first:**
    0x493F20 at chunk id 0x80134100 (a geometry pack). So a car geometry pack is unloaded with a model already
    unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
    same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
-9. **Fix phase 9 (Fable): The bots following the GPS** (item 4 of the players' list: the game's AI ignores the GPS, so it needs a driver
+10. **Fix phase 10 (Fable): The bots following the GPS** (item 4 of the players' list: the game's AI ignores the GPS, so it needs a driver
    of our own).
 
 **Later (Rishi: "too confusing right now"):** the friend in Seattle without Tailscale (above).
