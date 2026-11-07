@@ -200,6 +200,30 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **Overnight, 2026-11-07 05:20-06:35** (build bbd6039f..., commits up to 7e352aea; on the desktop, on the USB stick and in
+    C:\dev\laptop-update; the laptop runs 42fdf870 with AiRacers = 0 until the stick reaches it):
+    - **AI racers, fixed and tried in a two-PC race (06:24):** the AI finish (FinishRacer's network report 0x602000 now
+      succeeds for car ids 100+, the plugin finishes them at their laps); the results in the race's order (0x4D7240
+      hooked: the rows sorted, finished by time first); stock cars only (an AI on the add-on SENTRAB12 stalled the host's
+      race load at state 2 for good, 06:03, and the laptop lost the host); one at a time, car ids 100.. unique; 2 by
+      default (the player saw the frame rate drop with 4); never below their own car.
+    - **The host's "Starting Game Session..." after a race: fixed** (06:30, back in free roam 8 s after the results): the
+      race's records (0x89E814) put back to the players' count at the results, so the host's next session waits for
+      them only. It sat there for 4 minutes in every earlier try with AI racers.
+    - **Fast travel:** TravelKey (F7): to the GPS destination (G_GPS 0x838590 +0x10, on +0x29; tried, 612 m), or with no
+      GPS onto the nearest race start (g_spot: its trigger box's middle). The map's GPS keys: Up/Down a row, Left/Right
+      a place, C, Yes. FriendKey (F9): next to a friend in free roam (not tried).
+    - **No rubber band in career races** (CareerCatchUp = 0): [0x89E7F8] off while a career race runs (not tried in a
+      race).
+    - **Item 4, bots following the GPS:** tried (05:37): the racer AI in free roam drove away from the GPS target (57 m
+      to go, then 148, 206, 273, 347): the game's AI does not follow it.
+    - **computer use:** open_application on the granted SPEED2.EXE starts a NEW copy each time (ExtraOptions'
+      AllowMultipleInstances = 1): 5-6 copies ran on both PCs, each a "Rishi" on the server (phantom tags and invites).
+      Start the game once with Start-Process and focus it by clicking. The laptop has a second session ("Laptop remote
+      access setup") with computer use that drives its game on the desktop session's messages.
+    - A one-player LAN race can't be had (the game: "The game failed to start"), so AI races need two PCs.
+    - Open: the cutscene the player missed in a solo career race (05:00 on the laptop, build 46ea8b3f): which one is
+      not known; the plugin's Solo path calls the card's Accept (0x499B50) as the card's own handler does.
   - **AI racers in multiplayer races (item 5), built and tried** (commits 30afe20f, 01c75c74, 82ba25c3; build 42fdf870…
     on the desktop and the laptop, 2026-11-07 05:16; win/roam_asi/airacers_win.c):
     - How: at the start of the race's car making (0x6065B0, thiscall from 0x60A774) in a LAN race, the game's own
