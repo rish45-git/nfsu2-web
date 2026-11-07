@@ -68,7 +68,8 @@ says native clients are welcome there.
 
 **Next: the fix phases, in order (Rishi's list, 2026-11-07 ~10:45; "fix phase" so they don't mix with the build
 phases 0-6 below). Opus on high for phases 1-7; Fable for 8 and 9, the hardest (a crash dump's double unload; a
-GPS driver of our own), or for any phase Opus circles on twice:**
+GPS driver of our own), or for any phase Opus circles on twice. Rishi starts a new chat with Fable for those: it
+reads this file first:**
 
 1. **Fix phase 1 (Opus): Bots on the laptop, a retest:** with `AiRacers = 2` the laptop fell to ~2.5 fps at the race load and the host
    called the race off (09:06, and 06:03), so it runs `AiRacers = 0`. That was before 6038e3ff/bba7aad4 (the AI
