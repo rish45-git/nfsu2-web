@@ -63,6 +63,7 @@ static uint32_t g_ai_n0, g_ai_added;      /* the race's records before ours, and
 static uint32_t g_trim_recs, g_trim_ai;   /* taken off the records' and the AI count at the results (hk_results puts them back
                                             * while the screen makes its rows) */
 static void results_install(void);
+static void preload_install(void);
 static void report_install(void);
 static void names_install(void);
 static void put_rel(uint8_t *at, uint32_t target);
@@ -325,6 +326,37 @@ static void names_install(void){
     FlushInstructionCache(GetCurrentProcess(), site, 5);
     roam_log("[ai] the results' names (0x%08x): an AI racer's row has its name\n", NAME_SITE);
 }
+/* Their cars drawn.  The race's cars' models are asked of the car loader (0x8A3288, 0x63BC70 (ride, human, ...)) by a
+ * loop over the race's records ([0x89E814]; 0x57F673..0x57F6F0, in the loading stages 0x57F2D0: each one's handle at
+ * +0x8F8), before the track load makes the cars (0x6065B0).  The AI racers added there had no model asked for: they
+ * raced, unseen (Rishi, 09:32: two Corollas 0.4 s ahead at 2.75 s, nothing on the road).  So in a LAN race they are
+ * added just before that loop (its first instruction, mov eax,[0x89E814], goes to a stub that calls ai_preload and
+ * does it), and the loop asks for their cars as for the players'; at 0x6065B0 the race has them already */
+#define PRELOAD_SITE 0x0057f673u         /* mov eax, [0x89E814] (5 bytes), then xor edi, edi */
+static void __attribute__((cdecl, used)) ai_preload(void){
+    if (MR32(G_GAMEMODE) != 0x200u) return;
+    g_trim_recs = g_trim_ai = 0;
+    uint32_t n0 = MR32(G_NRECS);
+    ai_add();
+    if (MR32(G_NRECS) != n0) roam_log("[ai] the AI racers added before the race's cars are loaded (%u records -> %u): their cars load with the players'\n", n0, MR32(G_NRECS));
+}
+static void preload_install(void){
+    static const uint8_t want[7] = { 0xa1, 0x14, 0xe8, 0x89, 0x00, 0x33, 0xff };
+    uint8_t *site = (uint8_t *)(uintptr_t)PRELOAD_SITE, *t = g_page + 256;
+    DWORD old;
+    if (!ok(PRELOAD_SITE, 7) || memcmp(site, want, 7)){ roam_log("[ai] the race's car loading (0x%08x) is not the game's: the AI racers' cars may not be drawn\n", PRELOAD_SITE); return; }
+    t[0] = 0x60; t[1] = 0x9c;                                    /* pushad; pushfd */
+    t[2] = 0xe8; put_rel(t + 3, (uint32_t)(uintptr_t)ai_preload); /* call ai_preload */
+    t[7] = 0x9d; t[8] = 0x61;                                    /* popfd; popad */
+    memcpy(t + 9, site, 5);                                      /* mov eax, [0x89E814] */
+    t[14] = 0xe9; put_rel(t + 15, PRELOAD_SITE + 5u);            /* jmp back */
+    FlushInstructionCache(GetCurrentProcess(), t, 32);
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)t);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    roam_log("[ai] the race's car loading (0x%08x): the AI racers are added before it, so their cars are drawn\n", PRELOAD_SITE);
+}
 static void put_rel(uint8_t *at, uint32_t target){ int32_t r = (int32_t)(target - ((uint32_t)(uintptr_t)at + 4u)); memcpy(at, &r, 4); }
 /* roam_asi.c, at the start (with the plugin on) */
 void airacers_win_install(void){
@@ -350,4 +382,5 @@ void airacers_win_install(void){
     names_install();
     report_install();
     results_install();
+    preload_install();
 }
