@@ -17,10 +17,13 @@ says native clients are welcome there.
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 0`. The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
 - **Remote Control works** in this session (2026-11-07 08:45 chat): the laptop's session answers by SendMessage.
-- **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy for
-  192.168.0.109/100.76.38.37:8691 didn't listen (not even after Rishi restarted IP Helper): a user-mode forwarder
-  (`fwd8691.py` in this session's scratchpad: asyncio, both addresses -> 127.0.0.1:8691) stands in, run in the
-  background. The firewall rules allow any program on 8691.
+- **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy on 8691 did not
+  listen. Fixed at ~10:05 in an admin terminal: `Restart-Service iphlpsvc -Force` (Tailscale depends on it),
+  `Start-Service Tailscale`, then the Tailscale forward deleted and added again (its address came up after IP
+  Helper, so it was not bound). Both 192.168.0.109 and 100.76.38.37 :8691 answer; the steps are in the player
+  guide. (A user-mode forwarder stood in from 08:52 until then, and had to be stopped first: it held the ports.)
+  **The WSL server itself still runs as this session's background task**: after this session, start it as the
+  guide says (`wsl.exe ... wsl-server.sh run` in a PowerShell window kept open).
 - **Item 7 done:** free roam (AddOnStockLook = 1, 08:57): the laptop drew the SENTRAB12 whole, stock parts, no
   spoiler. Race (AddOnStockRace = 1, 09:05 and 09:12): whole on the laptop's grid with stock wheels; the desktop's
   log "[guard] AddOnStockRace: ... went with stock parts (N so far)". But AddOnStockLook = 1 crashes the laptop
