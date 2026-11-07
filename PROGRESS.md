@@ -37,6 +37,18 @@ says native clients are welcome there.
 5. **Open bugs:**
    - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
    - the 0x1D2780 start crash (D3D9 CreateDevice failing on the laptop with its screen asleep);
+   - **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
+     the server went away (the desktop rebooted at 08:36; "Rishi left: timeout" 08:34:50, "switch: cannot reach the
+     server" from 08:35:19), 3 s after "AFK: a key: the car is the player's again". Full dump on the laptop:
+     `C:\Users\risha\AppData\Local\CrashDumps\SPEED2.EXE.21888.dmp` (43.6 MB). **Again at 08:59:40** (dump
+     `SPEED2.EXE.28240.dmp`): on the laptop's way into the desktop's sprint, ~0.5 s after the trip's "quit to the main
+     menu", with the desktop's SENTRAB12 still in free-roam slot 0 ("0 parts", AddOnStockLook; slots released 0). The
+     old build (93 parts) always quit there cleanly ("2 ride(s) of friends' cars unloaded"). Static look: 0x5CE83E is
+     `mov [eax+4], edi` in 0x5CE7D0 (thiscall; it drops a model from the list at 0x872B44, frees its +0x2C and +0x20,
+     then unlinks the model itself: `next->prev = prev` with `next` bad), whose one caller is the resource unloader
+     0x493F20 at chunk id 0x80134100 (a geometry pack). So a car geometry pack is unloaded with a model already
+     unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
+     same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
    - the bots following the GPS (item 4: the game's AI ignores the GPS, so it needs a driver of our own).
 6. **Ideas from players' complaints, not done:**
    - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
