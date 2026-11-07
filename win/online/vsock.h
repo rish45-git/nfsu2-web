@@ -39,6 +39,11 @@ void vs_peer_gone(uint32_t vip);                 /* a peer delta's "gone": its T
 int  vs_session_active(void);                    /* a WSAStartup without its last WSACleanup */
 void vs_report(void);                            /* the counters, one log line */
 void vs_exit_report(void);                       /* the game's calls since the last report (at exit: no lock taken) */
+/* the plugin's own datagrams of a race (mprace.c's quit notice): to and from UDP port on a socket the game never sees;
+ * the race's peers (UDP 3658 sent to or heard from within within_ms), host order */
+int  vs_rt_send(uint16_t port, uint32_t ip_h, const void *p, int n);          /* 0 sent, -1 not */
+int  vs_rt_recv(uint16_t port, uint32_t *ip_h, void *p, int cap);            /* its length, -1 none */
+int  vs_race_peers(uint32_t *ip_h, int max, uint32_t within_ms);
 
 /* The replacements, as the game imports them (ws2_32 by ordinal, WSAIoctl by name, netapi32!Netbios). */
 typedef struct { const char *dll; int ord; const char *name; void *fn; } vs_import;

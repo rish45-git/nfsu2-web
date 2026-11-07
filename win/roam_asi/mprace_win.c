@@ -160,9 +160,27 @@ int roam_win_vtpatch(uint32_t vt, uint32_t want, uint32_t fn){
 int savegame_busy(void){ return 0; }
 float racenet_jump(const char *name){ (void)name; return 0.f; }
 float racenet_farthest(char name[16]){ name[0] = 0; return 0.f; }
-int vlan_race_peers(uint32_t *ip_h, int max, uint32_t within_ms){ (void)ip_h; (void)max; (void)within_ms; return 0; }
-int vlan_rt_send(uint16_t port, uint32_t ip_h, const void *p, int n){ (void)port; (void)ip_h; (void)p; (void)n; return 0; }
+/* ---- the quit notices of a race (mprace.c quit_tell / mprace_quit_heard, "N2QT"): on the virtual LAN's UDP 3659
+ * between the race's games (vsock.c vs_rt_*; the race's peers are those of its link, UDP 3658), as the browser's
+ * net_lan.c carries them: a player who quits at the pause menu tells the others, and one left alone wins ---- */
+int  vs_rt_send(uint16_t port, uint32_t ip_h, const void *p, int n);
+int  vs_rt_recv(uint16_t port, uint32_t *ip_h, void *p, int cap);
+int  vs_race_peers(uint32_t *ip_h, int max, uint32_t within_ms);
+int  vs_session_active(void);
+int vlan_race_peers(uint32_t *ip_h, int max, uint32_t within_ms){ return vs_race_peers(ip_h, max, within_ms); }
+int vlan_rt_send(uint16_t port, uint32_t ip_h, const void *p, int n){ return vs_rt_send(port, ip_h, p, n); }
 void mprace_quit_heard(uint8_t *m, int n, uint32_t from);
+#define QT_PORT_WIN     3659u          /* mprace.c QT_PORT */
+/* once a frame (roam_asi.c): what came to the port, while the game's network is up */
+void mprace_win_net_frame(void){
+    if (!vs_session_active()) return;
+    uint8_t m[64]; uint32_t from;
+    for (int k = 0; k < 16; k++){
+        int n = vs_rt_recv(QT_PORT_WIN, &from, m, sizeof m);
+        if (n < 0) break;
+        if (n >= 4 && !memcmp(m, "N2QT", 4)) mprace_quit_heard(m, n, from);
+    }
+}
 
 /* ---- the career credit (the port's mpcredit.c, its core) ---- */
 #define G_CAREER        0x0085ad40u

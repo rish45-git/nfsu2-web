@@ -6661,6 +6661,9 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
         else if (place && mprace_counts() && mprace_credit() == MPC_NONE) snprintf(t, sizeof t, "Multiplayer race: %d%s place. Only a win counts in your career", place, th);
         else if (place && prize) snprintf(t, sizeof t, "Multiplayer race: %d%s place, $%d", place, th, prize);
         else if (place) snprintf(t, sizeof t, "Multiplayer race: %d%s place", place, th);
+        /* (not finished, a friend's win counted all the same: the plugin's rule, mprace.c credit_decide) */
+        else if (!mprace_quit() && waits) snprintf(t, sizeof t, "Multiplayer race: not finished. %s won it: into your career at your next garage visit", winner);
+        else if (!mprace_quit() && mprace_credited() > 0) snprintf(t, sizeof t, "Multiplayer race: not finished. %s won it: it counts in your career too%s", winner, won);
         else if (mprace_quit() && mprace_fee()) snprintf(t, sizeof t, "Multiplayer race: you quit it, $%d fee", mprace_fee());
         else if (mprace_quit()) snprintf(t, sizeof t, "Multiplayer race: you quit it");
         else snprintf(t, sizeof t, "Multiplayer race: not finished");

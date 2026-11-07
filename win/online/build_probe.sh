@@ -31,5 +31,9 @@ ls -la "$O/swaptest.exe"
 $CC -std=c11 -O2 -Wall -Wextra -D_WIN32_WINNT=0x0602 -Iwin/online -c -o "$O/obj/srvprobe.o" win/online/srvprobe.c
 $CC -o "$O/srvprobe.exe" "$O/obj/srvprobe.o" "$O/obj/vsock_ws2.o" "$O/obj/vsock.o" "$O/obj/switch.o" "$O/obj/vp_libc.o" -lwinhttp -lws2_32
 ls -la "$O/srvprobe.exe"
+# qtprobe: a race's quit notice (N2QT on UDP 3659) between two processes on the switch, as mprace_win.c sends it
+$CC -std=c11 -O2 -Wall -Wextra -D_WIN32_WINNT=0x0602 -Iwin/online -c -o "$O/obj/qtprobe.o" win/online/qtprobe.c
+$CC -o "$O/qtprobe.exe" "$O/obj/qtprobe.o" "$O/obj/vsock_ws2.o" "$O/obj/vsock.o" "$O/obj/switch.o" "$O/obj/vp_libc.o" -lwinhttp -lws2_32
+ls -la "$O/qtprobe.exe"
 # mathtest: the plugin's logf/expf/powf/floorf (mprace_win.c) against the C library's (needs tools/build_roam_asi.sh first: its objects)
 $CC -std=gnu11 -O2 -msse2 -mfpmath=sse -Wall -o "$O/mathtest.exe" win/online/mathtest.c "$O/obj/mprace_win.o" "$O/obj/roam_libc.o" -lm

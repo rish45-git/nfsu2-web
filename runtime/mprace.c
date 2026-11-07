@@ -920,8 +920,16 @@ static void credit_decide(void){
     else if (first >= 0 && second >= 0) margin = M.res[second].time > 0.f ? (1.f - M.res[first].time / M.res[second].time) * 100.f : 100.f;
     if (!(margin > 0.f)) margin = 0.f;
     if (margin > 100.f) margin = 100.f;
+    /* a friend's win counts when we finished behind it; in the plugin also when we did not finish but stayed in to the
+     * end (place 0, not our own Quit: in a drift or drag race the game ends the race once the winner is in, and the
+     * slower player of a pair never finished; the player's choice, 2026-11-07) */
+#ifdef ROAM_HOST_WIN
+    int stayed = M.place > 1 || (M.place == 0 && !M.quit_race);
+#else
+    int stayed = M.place > 1;
+#endif
     if (M.r.credit && M.place == 1){ M.credit = MPC_WON; M.lead = margin; }
-    else if (M.r.credit && M.place > 1 && M.winner[0])
+    else if (M.r.credit && stayed && M.winner[0])
         for (int i = 0; i < M.r.nfriends && i < 6; i++) if (!strcasecmp(M.r.friends[i], M.winner)){ M.credit = MPC_FRIEND; M.lead = margin; }
     /* (the results' screen asks again each frame while we have no place: logged when the answer changes) */
     if (M.logged_credit && M.logged_credit - 1 == M.credit && M.logged_cplace == M.place && !strcmp(M.logged_winner, M.winner)) return;

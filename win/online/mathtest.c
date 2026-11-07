@@ -13,6 +13,13 @@ int roam_win_committed(uint32_t a){ (void)a; return 0; }
 uint32_t roam_win_call(uint32_t fn, uint32_t ecx, uint32_t edx, int n, const uint32_t *a){ (void)fn; (void)ecx; (void)edx; (void)n; (void)a; return 0; }
 long roam_win_frame_no(void){ return 0; }
 void roam_keys_tap(unsigned d, int h){ (void)d; (void)h; }
+/* (mprace_win.c's quit notices: vsock.c and mprace.c are not linked here) */
+int vs_session_active(void){ return 0; }
+const char *roam_opt(const char *n){ (void)n; return 0; }
+int vs_rt_send(uint16_t p, uint32_t i, const void *m, int n){ (void)p; (void)i; (void)m; (void)n; return -1; }
+int vs_rt_recv(uint16_t p, uint32_t *i, void *m, int c){ (void)p; (void)i; (void)m; (void)c; return -1; }
+int vs_race_peers(uint32_t *i, int m, uint32_t w){ (void)i; (void)m; (void)w; return 0; }
+void mprace_quit_heard(uint8_t *m, int n, uint32_t f){ (void)m; (void)n; (void)f; }
 static int32_t ulps(float a, float b){
     if (a == b) return 0;
     if (a != a || b != b) return (a != a && b != b) ? 0 : 1 << 30;

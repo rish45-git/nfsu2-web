@@ -391,6 +391,61 @@ static void sent_note(VSock *v, uint32_t ip, uint16_t port){
     v->sent[k] = (Sent){ ip, port, g_sent_seq };
 }
 
+/* ---- the race's peers and the runtime's own port (net_lan.c's race_note, rt_sock, vlan_rt_*) ------------------------
+ * The game's race link is UDP 3658 between the racers' vips: each peer we sent to or heard from there, and when, so
+ * that the plugin's own messages of a race (mprace.c's quit notice, "N2QT") go to the race's other games.  Those go
+ * from and to UDP 3659 (racehorn.c's HORN_PORT) on a socket of the plugin's, which the game never sees (no WsSock
+ * points at it); the game's own sockets never use that port.  All with g_mu held. */
+#define RACE_PORT  3658
+#define RACE_PEERS 16
+static struct { uint32_t ip_h; uint64_t at; } g_race[RACE_PEERS];
+static void race_note(uint32_t ip_h){
+    int k = -1;
+    for (int j = 0; j < RACE_PEERS && k < 0; j++) if (g_race[j].at && g_race[j].ip_h == ip_h) k = j;
+    for (int j = 0; j < RACE_PEERS && k < 0; j++) if (!g_race[j].at) k = j;
+    if (k < 0){ k = 0; for (int j = 1; j < RACE_PEERS; j++) if (g_race[j].at < g_race[k].at) k = j; }
+    g_race[k].ip_h = ip_h; g_race[k].at = now_us();
+}
+static VSock *rt_sock(uint16_t port){
+    for (int i = 1; i < NVS; i++) if (g_vs[i].used && g_vs[i].kind == 2 && g_vs[i].vfd == -1 && g_vs[i].bound && g_vs[i].bport == port) return &g_vs[i];
+    int i = 1; while (i < NVS && g_vs[i].used) i++;
+    if (i == NVS) return 0;
+    VSock *v = &g_vs[i];
+    memset(v, 0, sizeof *v);
+    v->used = 1; v->kind = 2; v->vfd = -1; v->bound = 1; v->bport = port;   /* vfd -1: the plugin's, not the game's */
+    return v;
+}
+int vs_rt_send(uint16_t port, uint32_t ip_h, const void *p, int n){
+    EnterCriticalSection(&g_mu);
+    int r = -1;
+    if (n >= 0 && n <= (int)UDP_MAX && online() && in_subnet_h(ip_h) && !bcast_h(ip_h) && ip_h != g_vip && rt_sock(port) &&
+        tx(NET_KIND_LAN_UDP, ip_h, port, port, NET_LAN_UDP_DATA, 64, 0, p, (uint32_t)n)){ S.udp_out++; r = 0; }
+    LeaveCriticalSection(&g_mu);
+    return r;
+}
+int vs_rt_recv(uint16_t port, uint32_t *ip_h, void *p, int cap){
+    EnterCriticalSection(&g_mu);
+    VSock *v = g_vip ? rt_sock(port) : 0;
+    int r = -1;
+    while (v && v->qh && r < 0){
+        Dgram *d = v->qh;
+        v->qh = d->next; if (!v->qh) v->qt = 0; v->qn--; v->qbytes -= (uint32_t)d->len;
+        if (!(d->flags & 1)){ r = d->len < cap ? d->len : cap; memcpy(p, d->data, (size_t)r); *ip_h = H(d->ip); }
+        vs_free(d);
+    }
+    LeaveCriticalSection(&g_mu);
+    return r;
+}
+int vs_race_peers(uint32_t *ip_h, int max, uint32_t within_ms){
+    EnterCriticalSection(&g_mu);
+    uint64_t now = now_us();
+    int n = 0;
+    for (int j = 0; j < RACE_PEERS && n < max; j++)
+        if (g_race[j].at && now - g_race[j].at <= (uint64_t)within_ms * 1000u && g_race[j].ip_h != g_vip) ip_h[n++] = g_race[j].ip_h;
+    LeaveCriticalSection(&g_mu);
+    return n;
+}
+
 /* ---- received frames ------------------------------------------------------------------ */
 #define AUTO_COST  64u
 #define AUTO_SRC   4096u
@@ -434,6 +489,7 @@ static void rx_frame(const RxFrame *sl){
     case NET_KIND_LAN_UDP:
         if (op == NET_LAN_UDP_UNREACH){ unreach_deliver(src_n, sport, dport); break; }
         S.udp_in++;
+        if (!bc && (sport == RACE_PORT || dport == RACE_PORT)) race_note(sl->src_ip);
         if (!udp_deliver(src_n, sport, bc ? 0xFFFFFFFFu : own_n(), dport, p, pn, bc) && !bc){
             S.udp_noport++;
             if (auto_ok(sl->src_ip, NET_LAN_HDR))
@@ -930,6 +986,7 @@ int vlan_sendto(WsSock *s, const uint8_t *buf, int len, uint32_t ip, uint16_t po
         tx(NET_KIND_LAN_UDP, NET_BROADCAST, v->bport, port, NET_LAN_UDP_DATA, (uint8_t)s->ip_ttl, 0, buf, (uint32_t)len);
     } else if (in_subnet_h(ip_h)){
         if (tx(NET_KIND_LAN_UDP, ip_h, v->bport, port, NET_LAN_UDP_DATA, (uint8_t)s->ip_ttl, 0, buf, (uint32_t)len)) sent_note(v, ip, port);
+        if (port == RACE_PORT || v->bport == RACE_PORT) race_note(ip_h);
     } else {
         S.udp_outside++;
         static uint32_t said[8]; static int ns;
