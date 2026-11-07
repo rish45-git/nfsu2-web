@@ -234,7 +234,10 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       for the next window message. The plugin removes that je (0x5BF219), so the pump always peeks. The game's focus
       pause (WM_ACTIVATE 0x5CCDA6: 0x4810F0 on [0x82B884], resumed by 0x481210) is unchanged. Tried on the desktop in
       free roam with Notepad in front for 75 s: 5400 frames per 30 s and the network on (the old build's log had stopped
-      at 06:55 with the Claude window in front); back in front, the car drove. On the stick and in C:\dev\laptop-update.
+      at 06:55 with the Claude window in front); back in front, the car drove.
+      **BackgroundFps = 30 (build eab49794, 07:10):** behind another window the plugin's frame sleeps to 30 frames a
+      second (roam_keys.c bg_cap, QueryPerformanceCounter), the paused world needs no more: 904 frames in 30 s behind
+      Notepad, the network on; 5400 again back in front. On the stick and in C:\dev\laptop-update.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;

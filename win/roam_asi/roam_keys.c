@@ -208,6 +208,35 @@ static int game_in_front(void){
     p_gwtp(w, &pid);
     return pid == GetCurrentProcessId();
 }
+/* With the game's window not in front (it runs on there, RunInBackground, guards_win.c), at most BackgroundFps frames
+ * a second (30; 0 no cap): the world is paused by the game's own focus pause, so drawing it at full rate only takes
+ * the GPU and the CPU from the window in front.  The plugin's network keeps its pace (its sends go by the clock) */
+static void bg_cap(int front){
+    static int fps = -1;
+    static LARGE_INTEGER freq, last;
+    static int capping;
+    if (fps < 0){
+        const char *b = roam_opt("NFSU2_ROAM_BACKGROUND"), *v = roam_opt("NFSU2_ROAM_BGFPS");
+        fps = 30;
+        if (v && *v){ int x = 0, nd = 0; for (const char *q = v; *q >= '0' && *q <= '9' && nd < 4; q++, nd++) x = x * 10 + (*q - '0'); if (nd) fps = x; }
+        if (b && b[0] == '0') fps = 0;                  /* (the game stops in the background anyway) */
+        if (fps && fps < 5) fps = 5;
+        if (fps > 240) fps = 0;
+        QueryPerformanceFrequency(&freq);
+    }
+    LARGE_INTEGER t;
+    QueryPerformanceCounter(&t);
+    if (!front && fps && freq.QuadPart && last.QuadPart){
+        if (!capping){ capping = 1; roam_log("[keys] the game's window is not in front: %d frames a second until it is\n", fps); }
+        LONGLONG per = freq.QuadPart / fps, el = t.QuadPart - last.QuadPart;
+        if (el >= 0 && el < per){
+            LONGLONG ms = (per - el) * 1000 / freq.QuadPart;
+            if (ms > 0) Sleep((DWORD)(ms > 200 ? 200 : ms));
+            QueryPerformanceCounter(&t);
+        }
+    } else if (front && capping){ capping = 0; roam_log("[keys] the game's window is in front again: its own frame rate\n"); }
+    last = t;
+}
 static void hotkeys_frame(void){
     if (!g_user_ok){
         g_user_ok = -1;
@@ -237,6 +266,7 @@ static void hotkeys_frame(void){
         if (down && !g_hk[i].held){ roam_log("[keys] %s\n", g_hk[i].what); g_hk[i].fn(); }
         g_hk[i].held = down;
     }
+    bg_cap(front);
 }
 /* the game's window has been in front for ms at least (roam_game.c: the lobby's Engage, as the hotkeys) */
 int roam_keys_front_for(unsigned ms){ if (g_user_ok != 1) return 1; return g_front_since && GetTickCount() - g_front_since >= ms; }   /* (no user32: as before) */
