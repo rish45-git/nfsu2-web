@@ -143,7 +143,9 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_AFKBOT",      "AfkBot",     "30" }, /* seconds without input before the game's AI drives the car (0: never) */
     { "NFSU2_ROAM_BONUSCASH",   "BonusCash",  ""  },  /* once per profile: this much into the career's bank (0 or empty: none) */
     { "NFSU2_ROAM_CATCHUP",     "CatchUp",    "0" },  /* multiplayer races: 0 no catch-up (no rubber band), 1 the game's */
-    { "NFSU2_ROAM_BOTSKILL",    "BotSkill",   "2" },  /* the AFK bot's skill in multiplayer races: 0 easy .. 2 hard (3: past the menus' hard, experimental) */
+    { "NFSU2_ROAM_AIRACERS",    "AiRacers",   "4" },  /* AI racers in each LAN race beside the players (0..4; the grid has 6 places) */
+    { "NFSU2_ROAM_AIEDGE",      "AiEdge",     "5" },  /* their cars rated this % above the best player's (0..50) */
+    { "NFSU2_ROAM_AISKILL",     "AiSkill",    "9" },  /* their skill, 0..9 (9 the game's top) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },
@@ -474,6 +476,7 @@ static uint32_t g_world_last;
 static void server_dll_watch(void);         /* (below, with the LoadLibraryA hook) */
 void mprace_win_net_frame(void);              /* mprace_win.c: the race's quit notices */
 void guards_win_frame(void);                    /* guards_win.c: the crash guards' counts */
+void airacers_win_frame(void);                  /* airacers_win.c: the AI racers' finish */
 void roam_asi_frame(void){
     if (g_dead || !g_ready) return;
     __asm__ volatile ("stmxcsr %0" : "=m"(g_game_mxcsr));
@@ -491,6 +494,7 @@ void roam_asi_frame(void){
     mprace_frame(0);                              /* a race trip from free roam (runtime/mprace.c), its career win */
     mprace_win_net_frame();                       /* its quit notices from the race's other games (mprace_win.c) */
     guards_win_frame();                           /* the crash guards' counts (guards_win.c) */
+    airacers_win_frame();                         /* the AI racers' finish (airacers_win.c) */
     mpcredit_frame(0);
     roam_keys_mute(mprace_owns_input());          /* (the trip drives the game's menus: the player's keys wait) */
     roam_game_frame(0);
@@ -774,6 +778,7 @@ static void online_setup(void){
 
 void showoff_win_install(void);                  /* showoff_win.c */
 void guards_win_install(void);                   /* guards_win.c */
+void airacers_win_install(void);                 /* airacers_win.c */
 /* ---- start-up ---------------------------------------------------------------------------------------- */
 static void init_once(void){
     if (g_inited) return;
@@ -802,6 +807,7 @@ static void init_once(void){
     g_hud_on = hud_install();
     if (opt_int("NFSU2_ROAM_SHOWOFF", 1)) showoff_win_install();   /* friends' cars' own open parts (showoff_win.c) */
     guards_win_install();                           /* the game's own crash a gone sound bank makes (guards_win.c) */
+    airacers_win_install();                         /* AI racers in LAN races (airacers_win.c) */
     {
         const char *k = roam_opt("NFSU2_ROAM_SERVERKEY");
         int vk = roam_keys_vk(k);

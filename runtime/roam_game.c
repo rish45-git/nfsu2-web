@@ -5546,6 +5546,15 @@ static const char *mp_test_env(const char *name){ (void)name; return 0; }      /
 #else
 static const char *mp_test_env(const char *name){ const char *s = getenv("NFSU2_INPUT_SCRIPT"); return s && *s ? getenv(name) : 0; }
 #endif
+/* the players a lobby needs before its host can start it: 2; 1 with the test aid NFSU2_MPRACE_TEST_SOLO=1 in the
+ * plugin's environment (a LAN race with the host alone: its AI racers tried on one PC) */
+static int mp_min_players(void){
+#ifdef ROAM_HOST_WIN
+    const char *v = rh_opt("NFSU2_MPRACE_TEST_SOLO");
+    if (v && v[0] == '1' && !v[1]) return 1;
+#endif
+    return 2;
+}
 /* A win of race r in a multiplayer race counts in this career (mprace.c,
  * mpcredit.c: the game's own win) when the player could win it with Solo
  * here: a race open in the career now (its marker on the map, any stage), or
@@ -5751,6 +5760,10 @@ static struct {
     int64_t  up_tx;                              /* hosting, on the trip: the last START, again every second until the race */
 } g_mp;
 static int mp_in_lobby(void){ return g_mp.st != MP_IDLE; }
+#ifdef ROAM_HOST_WIN
+/* airacers_win.c: the race lobby we are in or host (its id: the same on every game of the race), 0 none */
+uint32_t roam_game_lobby_id(void){ return g_mp.st != MP_IDLE ? g_mp.l.id : 0u; }
+#endif
 static const char *race_kind(uint32_t r){
     if (!r) return "race";
     uint8_t t = MR8(r + 0xfu);
@@ -6745,12 +6758,12 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
         /* with a player in it, the LAN server starts (as the game's Host LAN Server would on the trip): by the
          * host's Enter it takes logins, and neither the host's login nor the others wait for it.  A test's
          * NFSU2_MPRACE_TEST_NOPRE=1: not (the trip as before, A/B) */
-        if (g_mp.l.n >= 2 && !g_mp.srv){
+        if (g_mp.l.n >= mp_min_players() && !g_mp.srv){
             const char *no = mp_test_env("NFSU2_MPRACE_TEST_NOPRE");
             char nm12[RC_LOBBY_MAX][13]; lan_names(nm12);
             g_mp.srv = no && *no == '1' ? -1 : mprace_server_start(c, nm12[0]) ? 1 : -1;
         }
-        if (press && g_mp.l.n >= 2){
+        if (press && g_mp.l.n >= mp_min_players()){
             /* every game of the lobby, ours too, says "Starting the race" for MP_COUNT_US, then goes (its LAN
              * server, started while the lobby waited, takes the others at once) */
             g_mp.l.state = RC_LS_STARTING; g_mp.start_at = host + MP_COUNT_US;
@@ -6774,7 +6787,7 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
         if (g_mp.l.host == g_s.conf.self_id){
             /* the others' leaving and going counts until the trip: those left are the ones the LAN race waits for */
             mp_away(host);
-            if (g_mp.l.n < 2){
+            if (g_mp.l.n < mp_min_players()){
                 g_mp.l.state = RC_LS_OPEN; mp_to(MP_HOST, host); mp_note(host, "Everyone else left: the race waits for players again");
                 mp_send_all(RC_LOBBY_ADVERT, 0); g_mp.tx_at = host;
                 break;
@@ -10192,16 +10205,10 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
             MR32(0x0089e7f8u) = 0;
             rlog("[roam] f=%ld multiplayer race: catch-up off (CatchUp = 0)\n", rh_frame());
         }
-        /* ...and the AI's skill at BotSkill (2, hard, by default; 0..3): the race parameter [0x89E7A8] (GRaceParameters
-         * +8, from the menus' race options per race type, 0x83AAC4 +4) is the AI's difficulty -- 0x418276 takes the AI
-         * tuning's skill range by it ([0x81CB60] +0xA8C/+0xA90), and the catch-up's curves count 2 and 3 as hard
-         * (0x408560).  A LAN race's racers are players, so only the AFK bot drives by it */
-        static int sk = -1;
-        if (sk < 0){ sk = env_int("NFSU2_ROAM_BOTSKILL", 2, 0, 3); rlog("[roam] multiplayer races: the bot's skill %d\n", sk); }
-        if (mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && rd32(0x0089e7a8u) != (uint32_t)sk){
-            rlog("[roam] f=%ld multiplayer race: the AI's skill %u -> %d (BotSkill)\n", rh_frame(), rd32(0x0089e7a8u), sk);
-            MR32(0x0089e7a8u) = (uint32_t)sk;
-        }
+        /* (BotSkill, 2026-11-07 27ed3432..: it wrote [0x89E7A8] each frame, which is the race's traffic level -- the
+         * network setup 0x526830 sets it from the race type's traffic option (0x83AAC8), and 0x4FE9F0 adds that many
+         * traffic cars by it; the AI's difficulty is [0x89E7F4] and each racer's skill its record's +0x901.  The AI
+         * racers' skill is airacers_win.c's AiSkill now) */
     }
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
     /* (what the race's bot waits for, every 10 s of a race while it does not drive: the first live test, 2026-11-07

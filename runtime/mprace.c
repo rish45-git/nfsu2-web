@@ -630,10 +630,33 @@ static float balance_race(uint32_t ours, int mode){
     g_bal.n = 0;
     race_cars(car, pi, &n);
     for (int i = 0; i < n; i++){
-        r[i] = pi[i] ? MRF32(pi[i] + PI_RATING) : 0.f;
+        /* (the AI racers airacers_win.c adds to a LAN race -- driver 3 at the start -- race as the game made them) */
+        r[i] = pi[i] && !(okm(car[i], 0x28) && MR32(car[i] + 0x24u) == 3u) ? MRF32(pi[i] + PI_RATING) : 0.f;
         if (r[i] > 0.f){ logs += logf(r[i]); k++; if (r[i] > best) best = r[i]; }
     }
     fprintf(stderr, "[mprace] f=%ld the race's Catch Up option: %u\n", autotest_frame(), rd(G_CATCHUP));
+    /* The AI racers' cars (airacers_win.c, driver 3 at the start; the player's ask, 2026-11-07: "make sure that all
+     * these bots ALWAYS have the best gear for playing with actual players"): each one's power so that it is rated
+     * AiEdge % (5 by default) above the best of the players' cars, whatever car the game picked for it (up to twice
+     * its power, at least 3/4 of it) -- balance or not, every race type with AI */
+    if (best > 0.f){
+        const char *ev = getenv("NFSU2_ROAM_AIEDGE");
+        int edge = 5;
+        if (ev && *ev >= '0' && *ev <= '9'){ edge = 0; for (const char *q = ev; *q >= '0' && *q <= '9' && edge < 1000; q++) edge = edge * 10 + (*q - '0'); }
+        if (edge > 50) edge = 50;
+        for (int i = 0; i < n; i++){
+            if (!pi[i] || !(okm(car[i], 0x28) && MR32(car[i] + 0x24u) == 3u) || g_bal.n >= RACE_CARS_MAX) continue;
+            float ri = MRF32(pi[i] + PI_RATING), goal = best * (1.f + (float)edge / 100.f), was = rating_at(pi[i], 1.f);
+            if (!(ri > 0.f)) continue;
+            float want = was > 0.f ? goal * was / ri : goal, f = balance_factor(pi[i], want, 0.75f, 2.f);
+            int j = g_bal.n++;
+            g_bal.car[j] = car[i]; g_bal.f[j] = f;
+            balance_apply(j);
+            CarPerf p; mprace_car_perf(car[i], &p);
+            fprintf(stderr, "[mprace]   AI racer %d: %s rated %.1f -> power x%.3f, %.0f kW, rated %.1f (the best player's %.1f + %d %%)\n", i, p.name,
+                    (double)ri, (double)f, (double)(p.power / 1000.f), (double)(was > 0.f ? rating_at(pi[i], f) * ri / was : 0.f), (double)best, edge);
+        }
+    }
     const char *no = !b.on ? "off" : !balanced_mode(mode) ? "not in this race type" : k < 2 ? "fewer than 2 rated cars" : 0;
     if (no){ fprintf(stderr, "[mprace] f=%ld balance: %s\n", autotest_frame(), no); return 1.f; }
     float target = expf((1.f - b.share) * logs / (float)k + b.share * logf(best)), close = mode == 2 ? b.close_drag : b.close;
@@ -1137,7 +1160,10 @@ static void results_read(int log){
         uint32_t x = rd(G_RESULTS + 4u * k);
         if (!okm(x, 0x224)) continue;
         e[ne++] = x;
-        if (MRF32(x + 0xc8u) > far) far = MRF32(x + 0xc8u);
+        /* (the players' rows only: an AI racer of airacers_win.c -- no network player for its car id -- may have
+         * gone on past the line before it was finished, 4.5 laps of 3 in the first try) */
+        uint32_t xid = MR32(x + 4u) & 0xffffu;
+        if (xid < 8u && rd(G_NETPLAYERS + 4u * xid) && MRF32(x + 0xc8u) > far) far = MRF32(x + 0xc8u);
     }
     M.nres = 0;
     for (int k = 0; k < ne; k++){
@@ -1146,6 +1172,7 @@ static void results_read(int log){
         uint32_t id = MR32(e[k] + 4u) & 0xffffu, np = id < 8u ? rd(G_NETPLAYERS + 4u * id) : 0, t = MR32(e[k] + 0xcu);
         float laps = MRF32(e[k] + 0xc8u), pts = MRF32(e[k] + 0x104u), avg = MRF32(e[k] + 0x110u), top = MRF32(e[k] + 0x10cu);
         if (okm(np, 0x22)) for (int i = 0; i < (int)sizeof r->name - 1 && MR8(np + 0x12u + (uint32_t)i); i++) r->name[i] = (char)MR8(np + 0x12u + (uint32_t)i);
+        else if (!r->name[0]) snprintf(r->name, sizeof r->name, "AI racer");   /* (no network player: an AI racer, airacers_win.c) */
         r->ours = (int)id == ours;
         r->done = laps >= 0.f && laps < 1000.f ? laps : 0.f;
         r->clock = t < 4000u * 3600u ? (float)t / 4000.f : 0.f;
@@ -1493,7 +1520,8 @@ static void write_settings(int host){
     if (laps > 10) laps = 10;
     MR16(b + N_TRACK) = (uint16_t)M.r.track; MR16(b + N_LAPS) = (uint16_t)laps; MR32(b + N_DIR) = M.r.reverse ? 1u : 0u;
     int mx = M.r.players < 2 ? 2 : M.r.players > 6 ? 6 : M.r.players;
-    MR8(b + N_MAX) = (uint8_t)mx; MR8(b + N_MIN) = 2;
+    /* (the test aid NFSU2_MPRACE_TEST_SOLO=1: a game of one, its host alone: roam_game.c mp_min_players) */
+    { const char *solo = getenv("NFSU2_MPRACE_TEST_SOLO"); MR8(b + N_MAX) = (uint8_t)mx; MR8(b + N_MIN) = solo && solo[0] == '1' && !solo[1] ? 1 : 2; }
     MR8(b + N_PASSWD_ON) = 1; gs(b + N_PASSWD, M.r.password, 13); gs(b + N_PASSWD2, M.r.password, 13);
     fprintf(stderr, "[mprace] f=%ld the game: mode %d, track %d%s, %d laps, %d players\n", autotest_frame(), M.r.mode, M.r.track,
             M.r.reverse ? " reverse" : "", laps, mx);
@@ -1779,6 +1807,13 @@ static void step_race(CPU *c, long f){
         }
         int all = n >= (uint32_t)M.r.players && ready == (int)n - 1 && n >= 2;
         int late = f - M.step_at > ROOM_FRAMES && ready >= 1;
+        /* (the test aid NFSU2_MPRACE_TEST_SOLO=1: the host alone starts at once; the room's "can start" (+0x1180)
+         * wants two, so it is set) */
+        { const char *solo = getenv("NFSU2_MPRACE_TEST_SOLO");
+          if (solo && solo[0] == '1' && !solo[1] && n == 1u && M.r.players == 1 && !M.started && f - M.step_at > 60){
+              if (!MR8(ctx + 0x1180u)) mlog("solo test: the room's start allowed with one player%s", "");
+              MR8(ctx + 0x1180u) = 1; all = 1;
+          } }
         if ((all || late) && !M.started && !MR8(ctx + 0x1178u) && MR8(ctx + 0x1180u)){
             uint32_t one = 1; call(c, FN_READY, G_LOBBY, 1, &one); MR8(G_START_CLR) = 0;
             call(c, FN_START, ctx, 0, 0);
