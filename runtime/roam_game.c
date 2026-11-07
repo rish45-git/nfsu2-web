@@ -282,6 +282,8 @@ static inline uint32_t coop_player(void){ return 0; }
 
 /* ---- guest access ----------------------------------------------------------------- */
 static int ok(uint32_t a, uint32_t n){ return a && rh_committed(a) && rh_committed(a + n); }
+static int mc_level(void);
+static void models_check(const char *when);   /* the model lists' invariants (fix phase 9) */
 static uint32_t rd32(uint32_t a){ return ok(a, 3) ? MR32(a) : 0u; }
 static uint32_t gcall0(CPU *c, uint32_t fn, uint32_t ecx){ return rh_call(c, fn, ecx, 0, 0, 0); }
 static uint32_t gcall1(CPU *c, uint32_t fn, uint32_t ecx, uint32_t a){ return rh_call(c, fn, ecx, 0, 1, &a); }
@@ -1488,6 +1490,7 @@ static void world_gone(void){
 static void flush_unloads(CPU *c){
     for (int i = 0; i < g_npending; i++) gcall1(c, FN_LOADER_UNLOAD, G_CARLOADER, g_handles_pending[i]);
     if (g_npending) rlog("[roam] f=%ld %d ride(s) of friends' cars unloaded\n", rh_frame(), g_npending);
+    if (g_npending && mc_level() > 1) models_check("friends' rides unloaded");
     g_npending = 0;
 }
 /* leaving free roam with the world still there: park the cars (rides stay
@@ -1565,7 +1568,7 @@ static void restore(CPU *c, int k){
         gcall0(c, FN_CAR_DEACTIVATE, s->car);
         s->activated = 0;
     }
-    if (s->h_cur) gcall1(c, FN_LOADER_UNLOAD, G_CARLOADER, s->h_cur);
+    if (s->h_cur){ gcall1(c, FN_LOADER_UNLOAD, G_CARLOADER, s->h_cur); if (mc_level() > 1) models_check("a friend's ride given back"); }
     Slot keep = *s;
     memset(s, 0, sizeof *s);
     s->ride_new = keep.ride_new; s->ride_orig = keep.ride_orig; s->rec = keep.rec; s->peer = -1;
@@ -1619,6 +1622,7 @@ static void rides_out(CPU *c, uint32_t p, int most){
     int64_t t0 = roam_plat_now_us();
     while (MR32(p + 0x18u) + RIDES_FREE > n && k < most && (gcall1(c, FN_LOADER_PURGE, G_CARLOADER, 0) & 0xffu)) k++;
     g_rides_out.n += k; g_rides_out.us += roam_plat_now_us() - t0;
+    if (k && mc_level() > 1) models_check("unused rides out");
     if (g_rides_out.n >= 50){
         rlog("[roam] f=%ld car loader: %d unused rides out (%.1f ms in all), %u of %u entries in use\n", rh_frame(), g_rides_out.n,
              g_rides_out.us / 1000.0, MR32(p + 0x18u), n);
@@ -1648,7 +1652,7 @@ static int pool_room(CPU *c, const Slot *s, const char *car /* 0: a car of our o
     if (rd32(G_CARLOADER + LOADER_BUSY)) return 0;
     int n = 0;
     while (pool_free() < POOL_NEED && n < 64 && (gcall1(c, FN_LOADER_PURGE, G_CARLOADER, 0) & 0xffu)) n++;
-    if (n){ rlog("[roam] f=%ld car pool: %d unused model(s) unloaded\n", rh_frame(), n); pool_log("unloaded"); }
+    if (n){ rlog("[roam] f=%ld car pool: %d unused model(s) unloaded\n", rh_frame(), n); pool_log("unloaded"); if (mc_level() > 1) models_check("the car pool purged"); }
     if (pool_free() >= POOL_NEED) return 1;
     int i = s->peer >= 0 ? s->peer % RC_TABLE : 0;
     if (g_memnote[i].id != s->peer_id || rh_frame() >= g_memnote[i].next){
@@ -1839,7 +1843,7 @@ static int shared_owner(uint32_t owner){
 #define FN_PACK_WAKE    0x0048dc60u   /* cdecl (file): a pack's models back from HIBERNATING (0x57F030 mode 4) */
 #define FN_MODEL_FREE   0x00488d60u   /* thiscall G_STREAMER (pack, entry): a loaded model's data out (0x48D2E0 at no loads) */
 #define G_HIBER         0x00830c78u   /* HIBERNATING's models: +0xC how many, +0x74 their solids (8 bytes: name, solid), +0x78 the list (0x18 bytes: +0 name, +8 size, +0x12 loads, +0x14 the data) */
-static uint32_t g_wake_n = 0xffffffffu; static int g_wake_said;
+static uint32_t g_wake_n = 0xffffffffu; static int g_wake_said, g_wake_check;
 /* the solid a pack's table (+0xB8 -> +0x74, 8 bytes a model, in the order of +0xA0) has for its model entry e */
 static uint32_t pack_solid(uint32_t pk, uint32_t e){
     uint32_t sp = MR32(pk + 0xb8u), idx = (e - MR32(pk + 0xa0u)) / 0x18u, t = ok(sp, 0x80) ? MR32(sp + 0x74u) + 8u * idx : 0;
@@ -1921,6 +1925,7 @@ static void packs_wake(CPU *c){
             uint32_t file = pk + 8u;
             rh_call(c, FN_PACK_WAKE, 0, 0, 1, &file);
             rlog("[roam] f=%ld %s: %d model(s) back from HIBERNATING (%u left there)\n", rh_frame(), nm, k - nh, rd32(G_HIBER + 0xcu));
+            g_wake_check = 1;
         }
         for (int f = 0; f < nf; f++){
             uint32_t e = pack_model(pk, fx[f].name);
@@ -1943,6 +1948,68 @@ static void packs_wake(CPU *c){
         if (!n || n > 0x100u || !ok(tab, n * 0x18u)) break;
     }
     if (g_wake_n != 0xffffffffu) g_wake_n = rd32(G_HIBER + 0xcu);
+    if (g_wake_check){ g_wake_check = 0; models_check("after the packs' take-back"); }
+}
+/* ---- the model lists' invariants (fix phase 9's diagnosis; ModelCheck = 0 off, 1 at world changes and the packs'
+ * take-backs (default), 2 also after every ride unload and purge and every 300 frames) ---------------------------
+ * A loaded model's data block (entry +0x14, +8 its size) holds its solid (the 0x134011 header the pack's solid table
+ * points at, 0x493BB0) and, right behind it, its mesh (0x5CC280: the 0x134900 chunk's data, linked into the
+ * renderer's mesh list at 0x872ED0, next +0 / prev +4; the solid's +0 points at it).  A solid is unloaded by 0x493F20
+ * (0x5CE7D0 on its mesh: the vertex buffer freed, the mesh unlinked), from the streamer at no loads (0x494190) or from
+ * a resource file's unload for every solid in the file (0x4940E0).  The laptop's two crashes (0x5CE83E, 08:37 and
+ * 08:59, 2026-11-07, Rishi's SENTRAB12 with stock parts in slot 0, the world going) had a solid at 0x200C8310 in a
+ * file's chunk of 0x870 bytes whose mesh pointer 0x1B9ACC10 lay outside the chunk, with the mesh's next pointer into
+ * freed memory: a solid whose mesh was not its own.  So, when asked: every pack's table on the streamer's list
+ * (0x830D1C: the headers; +0xC how many, +0x74 (name, solid), +0x78 the entries) is walked, and each solid's mesh
+ * checked to lie in its own data and to be linked (next->prev and prev->next back to it); the mesh list itself is
+ * walked.  A line a check, the first few wrong ones in detail. */
+#define G_SOLIDLISTS    0x00830d1cu   /* the loaded pack headers (0x48D910 links the 0x134002 chunk's data: +0 next, +4 prev) */
+#define G_MESHES        0x00872ed0u   /* the renderer's meshes (+0 first, +4 last; a mesh: +0 next, +4 prev) */
+static int g_mc_level = -1, g_mc_lines;
+static int mc_level(void){
+    if (g_mc_level < 0) g_mc_level = env_int("NFSU2_ROAM_MODELCHECK", 1, 0, 2);
+    return g_mc_level;
+}
+static void models_check(const char *when){
+    if (!mc_level()) return;
+    int64_t t0 = roam_plat_now_us();
+    int packs = 0, entries = 0, solids = 0, indata = 0, infile = 0, nomesh = 0, meshes = 0, bad = 0, unl = 0;
+    char det[400]; int at = 0;
+    uint32_t head = G_SOLIDLISTS;
+    for (uint32_t sp = rd32(head); sp && sp != head && ok(sp, 0x80) && packs < 512; sp = rd32(sp), packs++){
+        uint32_t n = MR32(sp + 0xcu), tab = MR32(sp + 0x74u), ent = MR32(sp + 0x78u);
+        if (n > 100000u || !ok(tab, 8u * n) || !ok(ent, 0x18u * n)) continue;
+        for (uint32_t j = 0; j < n; j++){
+            uint32_t e = ent + 0x18u * j, name = MR32(e), data = MR32(e + 0x14u), size = MR32(e + 8u);
+            uint32_t sol = MR32(tab + 8u * j) == name ? MR32(tab + 8u * j + 4u) : 0;
+            entries++;
+            if (!sol) continue;
+            solids++;
+            if (!ok(sol, 0x90)){ bad++; if (at < (int)sizeof det - 80) at += snprintf(det + at, sizeof det - (size_t)at, " [%08x: solid %08x unreadable]", name, sol); continue; }
+            uint32_t mesh = MR32(sol);
+            if (data) indata++; else infile++;
+            if (!mesh){ nomesh++; continue; }
+            int inside = data ? mesh >= data && mesh < data + size : 1;
+            int linked = ok(mesh, 0x48) && ok(MR32(mesh), 8) && ok(MR32(mesh + 4u), 8) && MR32(MR32(mesh) + 4u) == mesh && MR32(MR32(mesh + 4u)) == mesh;
+            if (inside && linked) continue;
+            bad++; if (!linked) unl++;
+            if (at < (int)sizeof det - 110)
+                at += snprintf(det + at, sizeof det - (size_t)at, " [%08x: data %08x+%x solid %08x mesh %08x%s%s]", name, data, size, sol, mesh,
+                               inside ? "" : " OUTSIDE its data", linked ? "" : " NOT LINKED");
+        }
+    }
+    uint32_t m = rd32(G_MESHES), prev = G_MESHES; int mbad = 0;
+    for (; m && m != G_MESHES && meshes < 200000; m = MR32(m), meshes++){
+        if (!ok(m, 0x48) || MR32(m + 4u) != prev){ mbad++; if (at < (int)sizeof det - 60) at += snprintf(det + at, sizeof det - (size_t)at, " [mesh list broken at %08x after %08x]", m, prev); break; }
+        prev = m;
+    }
+    if (bad || mbad || g_mc_lines < 400 || mc_level() > 1){
+        g_mc_lines++;
+        rlog("[roam] f=%ld models (%s): %d packs, %d entries, %d solids (%d in data, %d in a file, %d without a mesh), %d meshes listed, %.2f ms%s%s%s\n",
+             rh_frame(), when, packs, entries, solids, indata, infile, nomesh, meshes, (roam_plat_now_us() - t0) / 1000.0,
+             bad || mbad ? ": WRONG" : "", bad || mbad ? det : "", bad > 6 ? " ..." : "");
+    }
+    (void)unl;
 }
 static void load_pack(CPU *c, uint32_t file, const char *path){
     uint32_t z[4] = { file, 0, 0, 0 };
@@ -2058,7 +2125,7 @@ static int finish_load(CPU *c, int k){
     make_inert(c, car);
     body_set(c, car, 0); s->ghost = 1;
     soft_park(c, car);
-    if (s->h_cur) gcall1(c, FN_LOADER_UNLOAD, G_CARLOADER, s->h_cur);
+    if (s->h_cur){ gcall1(c, FN_LOADER_UNLOAD, G_CARLOADER, s->h_cur); if (mc_level() > 1) models_check("a friend's old look unloaded"); }
     s->h_cur = s->h_new; s->h_new = 0;
     s->pending_cfg = 0; s->hidden = 1;
     /* the renderer draws a car at +0x50 (with the matrix copy at +0xD0),
@@ -9191,8 +9258,10 @@ static void world_changed(CPU *c, uint32_t w){
     if (g_world_seen){
         int any = 0; for (int k = 0; k < NSLOT; k++) if (g_sl[k].st != SL_FREE || g_sl[k].car) any = 1;
         if (any || g_npending) rlog("[roam] f=%ld world 0x%08x -> 0x%08x: friends' cars gone with it\n", rh_frame(), g_world_seen, w);
+        models_check("the world gone, before our unloads");
         world_gone();
         flush_unloads(c);                           /* before the next world loads its own cars */
+        models_check("the world gone, after our unloads");
         memset(g_tags, 0, sizeof g_tags);           /* never touch the old HUD's objects (either player's) */
 #if FLAGS
         memset(g_fls, 0, sizeof g_fls);             /* (nor the images of the flags before the names: they went with it, and
@@ -9202,6 +9271,7 @@ static void world_changed(CPU *c, uint32_t w){
         g_pass.first = g_pass.end = 0;            /* its triggers too */
     }
     g_world_seen = w;
+    if (w) models_check("a new world");
 }
 
 #ifndef ROAM_HOST_WIN
@@ -9647,6 +9717,7 @@ void roam_game_frame(CPU *c){
     if (g_pw.on) partswatch("pre");
     if (g_packs_ok) packs_wake(c);                  /* after the game's hibernation (into the world) */
     if (g_pw.on) partswatch("post");
+    if (mc_level() > 1 && g_step % 300 == 0) models_check("every 300 frames");
     /* sync clock */
     float wdt = rd32(G_FLOW) == 6u ? MRF32(G_WORLDDT) : 0.f;
     if (!__builtin_isfinite(wdt) || wdt < 0 || wdt > 1.f) wdt = 0;
@@ -11976,6 +12047,8 @@ static struct { uint32_t name, count; const char *what; int said; } g_pools[] = 
     { 0x00790b18u, MM_POOL, "minimap visuals" },                   /* "MinimapEntity" */
     { 0x00790b08u, MM_POOL, "minimap icons" },                     /* "MinimapElements" */
 };
+#endif /* !ROAM_HOST_WIN */
+/* (the Windows plugin too: guards_win.c carpool_install hooks 0x63A6F0 and 0x610750 for these two) */
 /* The Cars pool's extra memory.  A track load adds the difference between
  * its size (0x7FA9D4 table, free roam's raised to O.carpool_kb) and the
  * startup size (+0x68) to the pool as one block (0x610750: car loader +0x6C,
@@ -12024,6 +12097,7 @@ int roam_game_loader_release(CPU *c){
         rh_call(c, FN_LOADER_FREE, G_CARLOADER, 0, 2, a2);
         e = nx;
     }
+    models_check("the car loader's rides freed at the track's unload");
     if (extra_is_free(p, x, xn)) return 1;
     rlog("[roam] f=%ld the car pool's extra %u KB is still in use (%.2f of %.2f MB used): it stays in the pool\n", rh_frame(),
          xn / 1024u, MR32(p + 0x28u) / 1048576.0, MR32(p + 0x24u) / 1048576.0);
@@ -12037,6 +12111,7 @@ int roam_game_pool_grow(uint32_t size){
     if (x && size <= base + xn) return 0;
     return 1;
 }
+#ifndef ROAM_HOST_WIN
 /* No room in the Cars pool for a load.  A step of a load sizes what it reads
  * (a ride's textures 0x63AD8A, its models 0x63A2A2, ...: 0x48D420 counts
  * what does not fit into the largest free block) and calls the purge (0x63A1B0

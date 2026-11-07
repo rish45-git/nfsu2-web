@@ -105,6 +105,7 @@ static void addon_race_install(void){
 
 /* roam_asi.c, at the start (with the plugin on) */
 static void traffic_install(void);
+static void carpool_install(void);
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
     uint8_t *site = (uint8_t *)(uintptr_t)SND_SITE;
@@ -113,6 +114,7 @@ void guards_win_install(void){
     background_install();
     traffic_install();
     addon_race_install();
+    carpool_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
         return;
@@ -230,6 +232,71 @@ static void traffic_install(void){
     FlushInstructionCache(GetCurrentProcess(), site, sizeof want);
     g_traffic_pct = pct;
     roam_log("[guard] CareerTraffic = %d %%: a career race's traffic cars x %d.%02d (0x%08x)\n", pct, pct / 100, pct % 100, TRAFFIC_SITE);
+}
+
+/* ---- the Cars pool's extra memory: given back only when it is free (fix phase 9: the 0x5CE83E crash) --------------
+ * A track load raises the Cars pool to free roam's size (G_CARPOOL_KB) by one block from the main pool (0x610750: car
+ * loader +0x6C, +0x70), and the track's unload (0x580EF0) has the car loader give it back (0x63A6F0): it frees its
+ * unused rides, takes the block out of the pool (0x43FBA0) and FREES IT TO THE MAIN POOL (0x440540) whatever the
+ * removal did.  With rides still in the block (friends' cars: the World is gone, their rides are unloaded a frame
+ * later; and the pool's own fragments) the removal does nothing and the block is the main pool's and the Cars
+ * pool's at once; the track's next unloads (InGameMemoryFile, InGameCommon.bun: 0x580E90, right after) and loads
+ * then write over car models still linked in the renderer's mesh list, and a solid of InGameCommon.bun whose mesh
+ * pointer now points at a freed car mesh crashes in 0x5CE7D0 (0x5CE83E: the laptop, 08:37 and 08:59, a friend's
+ * stock-look SENTRAB12 in slot 0; the desktop, 14:10 and 14:17, a roambot's SENTRAB12, 2026-11-07).  The Mac port
+ * has had the cure since 10-21 (runtime/roam.c, sub_0063a6f0 / sub_00610750): the plugin's roam_game_loader_release
+ * unloads friends' rides and the loader's unused rides first and lets the game's give-back run only when the block
+ * is one free block again; otherwise it stays in the pool, and the next track load adds nothing while the pool is
+ * big enough (roam_game_pool_grow).  The Windows plugin never installed those two hooks; here they are.
+ * 0x63A6F0: thiscall CarLoader, no arguments (ret).  0x610750: thiscall CarLoader (size), ret 4. */
+#define GIVEBACK_SITE 0x0063a6f0u   /* push ecx; push ebp; push esi; mov esi,ecx; mov ebp,[esi+0x6C] */
+#define GROW_SITE     0x00610750u   /* push esi; mov esi,[esp+8]; push edi; mov edi,ecx */
+int roam_game_loader_release(CPU *c);            /* runtime/roam_game.c: 1 = run the game's own */
+int roam_game_pool_grow(uint32_t size);           /* runtime/roam_game.c: 1 = let it add the block */
+static int __attribute__((cdecl, used)) giveback_ask(void){ return roam_game_loader_release(0); }
+static int __attribute__((cdecl, used)) grow_ask(uint32_t size){ return roam_game_pool_grow(size); }
+static void carpool_install(void){
+    static const uint8_t want_g[8] = { 0x51, 0x55, 0x56, 0x8b, 0xf1, 0x8b, 0x6e, 0x6c };
+    static const uint8_t want_a[8] = { 0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8b, 0xf9 };
+    uint8_t *sg = (uint8_t *)(uintptr_t)GIVEBACK_SITE, *sa = (uint8_t *)(uintptr_t)GROW_SITE;
+    DWORD old;
+    if (!ok(GIVEBACK_SITE, 8) || memcmp(sg, want_g, 8) || !ok(GROW_SITE, 8) || memcmp(sa, want_a, 8)){
+        roam_log("[guard] the car loader's give-back (0x%08x) or pool growth (0x%08x) is not the game's (another mod?): "
+                 "the Cars pool's extra memory may be freed with rides in it\n", GIVEBACK_SITE, GROW_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint8_t *t = g_page + 512, *q = t;                             /* the give-back */
+    *q++ = 0x51; *q++ = 0x52;                                      /* push ecx; push edx */
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)giveback_ask); q += 4;
+    *q++ = 0x5a; *q++ = 0x59;                                      /* pop edx; pop ecx */
+    *q++ = 0x85; *q++ = 0xc0;                                      /* test eax, eax */
+    *q++ = 0x74; *q++ = 10;                                        /* jz: ours did it all -> ret */
+    memcpy(q, want_g, 5); q += 5;                                  /* the 5 bytes moved */
+    *q++ = 0xe9; put_rel(q, GIVEBACK_SITE + 5u); q += 4;           /* jmp 0x63A6F5 */
+    *q++ = 0xc3;                                                   /* ret */
+    uint8_t *u = g_page + 576; q = u;                              /* the growth */
+    *q++ = 0x51; *q++ = 0x52;                                      /* push ecx; push edx */
+    *q++ = 0xff; *q++ = 0x74; *q++ = 0x24; *q++ = 0x0c;            /* push [esp+0xC]: the size */
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)grow_ask); q += 4;
+    *q++ = 0x83; *q++ = 0xc4; *q++ = 0x04;                         /* add esp, 4 */
+    *q++ = 0x5a; *q++ = 0x59;                                      /* pop edx; pop ecx */
+    *q++ = 0x85; *q++ = 0xc0;                                      /* test eax, eax */
+    *q++ = 0x74; *q++ = 10;                                        /* jz: the pool is big enough -> ret 4 */
+    memcpy(q, want_a, 5); q += 5;                                  /* the 5 bytes moved */
+    *q++ = 0xe9; put_rel(q, GROW_SITE + 5u); q += 4;               /* jmp 0x610755 */
+    *q++ = 0xc2; *q++ = 0x04; *q++ = 0x00;                         /* ret 4 */
+    FlushInstructionCache(GetCurrentProcess(), g_page, sizeof g_page);
+    if (!VirtualProtect(sg, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    sg[0] = 0xe9; put_rel(sg + 1, (uint32_t)(uintptr_t)t);
+    VirtualProtect(sg, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), sg, 5);
+    if (!VirtualProtect(sa, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    sa[0] = 0xe9; put_rel(sa + 1, (uint32_t)(uintptr_t)u);
+    VirtualProtect(sa, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), sa, 5);
+    roam_log("[guard] the Cars pool's extra memory (0x%08x, 0x%08x): friends' rides go first, and it is given back only once "
+             "it is one free block (else it stays, and the next track adds none)\n", GIVEBACK_SITE, GROW_SITE);
 }
 
 void guards_win_frame(void){
