@@ -138,6 +138,24 @@ What follows is the record: how it was planned, built and tested, in order.
 without the door fix, sponsors or movie. Older builds are kept in `out/win/backup/` (`NFSU2FreeRoam.phase4.*`,
 `.phase6-try1.asi`, `.before-tohost.asi`, `.before-showoff.asi`).
 
+**Built after that, NOT installed anywhere** (the player is testing the installed build, 2026-11-07 01:20; install only
+when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 955738f2, 525 KB, asi_check PASS:
+- **Partner and crew-mates count unless you quit** (the player's choice for item 5). In the plugin (mprace.c
+  credit_decide, `ROAM_HOST_WIN`), a friend's win counts when we did not finish but stayed in to the end: place 0,
+  not our own Quit. The result line says "not finished. X won it: it counts in your career too".
+- **Quit notices** (item 6). vsock.c notes the race link's peers (UDP 3658) and has a socket of the plugin's own on UDP
+  3659 (`vs_rt_send` / `vs_rt_recv` / `vs_race_peers`). mprace.c's N2QT notices go through it, and the creator
+  passes them on, so a player who quits tells the others and the last one in wins. `out/win/qtprobe.exe`: two
+  processes on the local server, every check passes. vsprobe and swaptest still pass.
+- **Waiting wins kept across a restart** (item 9):
+  - The file is `scripts\NFSU2FreeRoam.wins`, one line per win and profile.
+  - A free-roam win waits there (W). A win given in the garage stays (G) until the profile's save file is newer than
+    the moment it was given and the career has it.
+  - A G win the loaded career doesn't have waits again (W).
+  - The save is looked for under the game folder's `SAVEGAMES`, then Documents.
+  - asi_check now allows ReadFile, GetFileAttributesExA and GetSystemTimeAsFileTime, and its size limit is 640 KB.
+- Not tried in the game: all three. The README in `C:\dev\laptop-update` gets them when the build is installed.
+
 **Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
 - free roam online with names over cars (`Labels`) and the HUD's top line natively;
 - F8 server switch (`Servers`, `ServerKey`);
@@ -187,15 +205,15 @@ as long as some `wsl.exe` session does (see "Local server").
 
 **Open:**
 1. Try in the game: sponsors and movie, the door fix, a crew-mate's win, a friend over Tailscale.
-2. The player's decision on Partner in races not finished: in drift and drag races the game ends the race when the
-   winner is in, so a slower friend is "not finished" and gets no credit.
-3. Quit notices between racers (no N2QT natively).
+2. Done (built, not installed): Partner in races not finished counts unless we quit. (Was: in drift and drag races the game ends the race when the
+   winner is in, so a slower friend was "not finished" and got no credit.)
+3. Done (built, not installed): quit notices between racers (N2QT on UDP 3659).
 4. Controller keys for the lobby.
 5. The lobby line without the HUD.
 6. Smoothing the free-roam drop-outs at about 950 m.
 7. The desktop's one hang at start (cause unknown).
 8. The laptop not going full screen (not the plugin).
-9. Waiting wins are lost on a restart (no MPWINS.DAT natively).
+9. Done (built, not installed): waiting wins kept across a restart (NFSU2FreeRoam.wins).
 10. Door sync only between cars of the same model.
 11. English texts only.
 12. The exe fingerprint does not cover the new game functions: roam_fingerprint.py is still broken.
