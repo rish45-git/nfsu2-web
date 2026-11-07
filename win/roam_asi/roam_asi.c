@@ -143,6 +143,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_AFKBOT",      "AfkBot",     "30" }, /* seconds without input before the game's AI drives the car (0: never) */
     { "NFSU2_ROAM_BONUSCASH",   "BonusCash",  ""  },  /* once per profile: this much into the career's bank (0 or empty: none) */
     { "NFSU2_ROAM_CATCHUP",     "CatchUp",    "0" },  /* multiplayer races: 0 no catch-up (no rubber band), 1 the game's */
+    { "NFSU2_ROAM_BOTSKILL",    "BotSkill",   "2" },  /* the AFK bot's skill in multiplayer races: 0 easy .. 2 hard (3: past the menus' hard, experimental) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },

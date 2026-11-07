@@ -10064,6 +10064,16 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
             MR32(0x0089e7f8u) = 0;
             rlog("[roam] f=%ld multiplayer race: catch-up off (CatchUp = 0)\n", rh_frame());
         }
+        /* ...and the AI's skill at BotSkill (2, hard, by default; 0..3): the race parameter [0x89E7A8] (GRaceParameters
+         * +8, from the menus' race options per race type, 0x83AAC4 +4) is the AI's difficulty -- 0x418276 takes the AI
+         * tuning's skill range by it ([0x81CB60] +0xA8C/+0xA90), and the catch-up's curves count 2 and 3 as hard
+         * (0x408560).  A LAN race's racers are players, so only the AFK bot drives by it */
+        static int sk = -1;
+        if (sk < 0){ sk = env_int("NFSU2_ROAM_BOTSKILL", 2, 0, 3); rlog("[roam] multiplayer races: the bot's skill %d\n", sk); }
+        if (mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && rd32(0x0089e7a8u) != (uint32_t)sk){
+            rlog("[roam] f=%ld multiplayer race: the AI's skill %u -> %d (BotSkill)\n", rh_frame(), rd32(0x0089e7a8u), sk);
+            MR32(0x0089e7a8u) = (uint32_t)sk;
+        }
     }
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
     /* (what the race's bot waits for, every 10 s of a race while it does not drive: the first live test, 2026-11-07
