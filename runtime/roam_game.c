@@ -5407,6 +5407,7 @@ static void hnote_line(int64_t host, char *tx, int n){
 #endif
 #if MPRACES
 static int mp_line(int64_t host, char *tx, int n);
+static int mp_in_lobby(void) __attribute__((unused));   /* hosting, joined, counting down or on the trip */
 static int64_t g_mp_hud_at;                   /* free roam's HUD was up, no dialog over it (the lobby's panel shows) */
 #endif
 static void du_hud(CPU *c, int64_t host){
@@ -5417,6 +5418,12 @@ static void du_hud(CPU *c, int64_t host){
 #if MPRACES
     if (g_in_roam && hud_on_top(pkg) && !rd32(0x00838974u /* a dialog up */)) g_mp_hud_at = host;
     if (g_in_roam && hud_on_top(pkg) && g_du.st == DU_IDLE && !g_du.icon && !rd32(0x00838974u /* a dialog up */)) mp_line(host, tx, sizeof tx);   /* the race lobby's, else the outrun's */
+#ifdef ROAM_HOST_WIN
+    /* ...and in a lobby, over the game's other screens too (the world map, the pause menu, the SMS: the HUD's package
+     * is drawn under them, ours with it), so a player looking at the map still sees who joined and the count (the
+     * player's list, item 11); not over a dialog (the race card's Solo or Multiplayer, a message) */
+    else if (g_in_roam && !hud_on_top(pkg) && mp_in_lobby() && !rd32(0x00838974u /* a dialog up */)) mp_line(host, tx, sizeof tx);
+#endif
     if (!tx[0] && g_in_roam && hud_on_top(pkg)){
 #else
     if (g_in_roam && hud_on_top(pkg)){
@@ -5743,6 +5750,7 @@ static struct {
     int      told;                               /* on the trip: the others told that ours gave up before the race */
     int64_t  up_tx;                              /* hosting, on the trip: the last START, again every second until the race */
 } g_mp;
+static int mp_in_lobby(void){ return g_mp.st != MP_IDLE; }
 static const char *race_kind(uint32_t r){
     if (!r) return "race";
     uint8_t t = MR8(r + 0xfu);
@@ -6607,6 +6615,26 @@ static void mp_frame(CPU *c, int64_t host, int in_roam, int world_runs, const ui
     int eng = in_roam && world_runs && !(rd32(G_ACTIONS) & (1u << ACT_ENGAGE));
     int press = eng && !g_mp.engage;
     g_mp.engage = eng;
+#ifdef ROAM_HOST_WIN
+    /* The JoinKey on a controller (the player's list, item 10: the plugin's hotkeys are the keyboard's): Engage (the
+     * pad's D-pad Up by default, or Enter) held 1 s away from every lobby's start and race marker joins the lobby offered
+     * on the top line from afar, or leaves the one joined from afar, as J does.  At a start Engage stays the lobby's
+     * (press); the game's own Engage (an AI outrun challenger near) takes the press, before the hold */
+    {
+        static int64_t held_at; static int fired;
+        if (!eng){ held_at = 0; fired = 0; }
+        else if (!held_at) held_at = host;
+        else if (!fired && host - held_at >= 1000000){
+            fired = 1;
+            MpLobby *h[MP_SEEN];
+            int far_in = (g_mp.st == MP_IN || g_mp.st == MP_ASKED) && g_mp.far;
+            if (far_in || (g_mp.st == MP_IDLE && !mp_spot_here() && mp_here(h) == 0 && mp_far_pick(host))){
+                rlog("[roam] f=%ld race lobby: Engage held 1 s: as the JoinKey (%s)\n", rh_frame(), far_in ? "leave" : "join from afar");
+                roam_game_join_key();
+            }
+        }
+    }
+#endif
     uint32_t quit = __atomic_exchange_n(&g_quit_id, 0, __ATOMIC_RELAXED);
     /* hosting, counting down or on the trip: a player of ours who quit is out at once (not waited for in the room) */
     if (quit && quit != g_s.conf.self_id && g_mp.l.host == g_s.conf.self_id && (g_mp.st == MP_HOST || g_mp.st == MP_COUNT || g_mp.st == MP_TRIP))
@@ -6778,7 +6806,7 @@ static int mp_line(int64_t host, char *tx, int n){
         if (g_mp.l.away_s) snprintf(tx, (size_t)n, "%s seems away: the lobby closes in %d s", nm, g_mp.l.away_s);
         else snprintf(tx, (size_t)n, "%s's %s: %d of %d players. Waiting for %s to start", nm, race_kind(g_mp.l.race), g_mp.l.n, g_mp.l.max, nm);
 #ifdef ROAM_HOST_WIN
-        if (g_mp.far && mp_join_key()){ size_t k = strlen(tx); snprintf(tx + k, (size_t)n - k, " (%s: leave)", mp_join_key()); }
+        if (g_mp.far && mp_join_key()){ size_t k = strlen(tx); snprintf(tx + k, (size_t)n - k, " (%s or hold Up on the pad: leave)", mp_join_key()); }
 #endif
         return 1;
     case MP_COUNT:
@@ -6808,7 +6836,7 @@ static int mp_line(int64_t host, char *tx, int n){
         {
             MpLobby *f = mp_far_pick(host);
             if (f && !mp_cannot() && mp_join_key()){
-                snprintf(tx, (size_t)n, "%s hosts a multiplayer %s (%d of %d), %.0f m away: press %s to join from here", mp_name(f->host),
+                snprintf(tx, (size_t)n, "%s hosts a multiplayer %s (%d of %d), %.0f m away: press %s (or hold Up on the pad) to join from here", mp_name(f->host),
                          race_kind(f->race), f->n, f->max, (double)mp_dist(f->x, f->y), mp_join_key());
                 return 1;
             }
@@ -9825,7 +9853,17 @@ void roam_game_frame(CPU *c){
          * (roam_game_hud), does not run under the world map, and they stayed
          * on it where the cars had been on the screen */
         uint32_t pl = rd32(G_PLAYER1), hud = pl && ok(pl, PL_HUD + 4u) ? rd32(pl + PL_HUD) : 0;
-        if (hud && hud == g_tag.hud && ok(hud, 0x14) && !hud_on_top(rd32(hud + 0x10u))) for (int i = 0; i <= TAG_N; i++) tag_hide(c, i);
+        if (hud && hud == g_tag.hud && ok(hud, 0x14) && !hud_on_top(rd32(hud + 0x10u))){
+#if MPRACES && defined(ROAM_HOST_WIN)
+            /* (in a lobby the line at the top stays, set from here: the player's list, item 11; du_hud keeps it to the
+             * lobby's text over another screen, none over a dialog) */
+            int keep = mp_in_lobby() && g_in_roam && !rd32(0x00838974u /* a dialog up */);
+            for (int i = 0; i < TAG_N; i++) tag_hide(c, i);
+            if (keep && O.on && g_net_ok) du_hud(c, host); else tag_hide(c, TAG_DUEL);
+#else
+            for (int i = 0; i <= TAG_N; i++) tag_hide(c, i);
+#endif
+        }
 #if LEND_OPP
         int busy = 0;
         for (int k = 0; k < NSLOT; k++) if (g_sl[k].st != SL_FREE && g_sl[k].st != SL_PARKED) busy = 1;
