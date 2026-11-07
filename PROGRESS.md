@@ -13,9 +13,9 @@ says native clients are welcome there.
 **State:**
 
 - **Builds:** the repo builds `825c3aa1` (bba7aad4). The desktop runs `825c3aa1` with `AddOnStockLook = 0`,
-  `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `81a6a3d8` (6038e3ff, from the stick at 09:42, Rishi's OK
-  in the laptop session) with `AiRacers = 0`. The stick (`laptop-update`, also `C:\dev\laptop-update`) holds
-  `81a6a3d8`, verified on the stick (50 files) and on the laptop.
+  `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
+  laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 0`. The stick
+  (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
 - **Remote Control works** in this session (2026-11-07 08:45 chat): the laptop's session answers by SendMessage.
 - **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy for
   192.168.0.109/100.76.38.37:8691 didn't listen (not even after Rishi restarted IP Helper): a user-mode forwarder
@@ -47,11 +47,10 @@ says native clients are welcome there.
 **Next, in order:**
 
 1. The trip's background stall (above); the 0x5CE83E crash (AddOnStockLook = 1), with the laptop's two dumps.
-2. Put `825c3aa1` (or newer) on the stick for the laptop at the next install.
-3. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
+2. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
-4. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
-5. **Open bugs:**
+3. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
+4. **Open bugs:**
    - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
    - the 0x1D2780 start crash (D3D9 CreateDevice failing on the laptop with its screen asleep);
    - **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
@@ -67,7 +66,7 @@ says native clients are welcome there.
      unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
      same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
    - the bots following the GPS (item 4: the game's AI ignores the GPS, so it needs a driver of our own).
-6. **Ideas from players' complaints, not done:**
+5. **Ideas from players' complaints, not done:**
    - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
      0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
      Needs a race win to test;
