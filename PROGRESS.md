@@ -200,6 +200,11 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **The race's movie works** (03:08-03:09, the desktop): the circuit win moved the career to stage 2, the crib's
+    autosave had it, its way to the world was held, Scene07 then UpperClass played (the garage's menu showed through
+    faintly in the player's photo), and then the world; back in free roam at 03:09:35. No sponsor offers yet (stage 1
+    before the win). Also: the laptop's bot drove 7534 m in the race but only 1.87 laps, so it lost the race's route
+    after taking over mid-race; ToHost gave up while the host sat in its movie (expected).
   - **The race bot works** (03:03, build 2c859a50 on both PCs, a 3-lap circuit the desktop hosted): it took over on
     both PCs after 30 s in the running race (desktop 106 s, laptop 149 s, then again 30 s later), and a key gave each
     car back. The player: the bots feel held back ("limiters"). That's the game's catch-up, [0x89E7F8]: with two player
