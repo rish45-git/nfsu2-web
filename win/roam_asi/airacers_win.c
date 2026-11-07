@@ -60,6 +60,8 @@ static int g_ai_on;
 static uint32_t g_ai_race;
 static uint32_t g_ai_done;               /* the AI racers finished in this race: a bit each, by car id - 100 */
 static uint32_t g_ai_n0, g_ai_added;      /* the race's records before ours, and how many we added */
+static uint32_t g_trim_recs, g_trim_ai;   /* taken off the records' and the AI count at the results (hk_results puts them back
+                                            * while the screen makes its rows) */
 static void results_install(void);
 static void report_install(void);
 static void names_install(void);
@@ -145,6 +147,7 @@ static void ai_add(void){
              n1 - n0, humans, want, skill, MR32(G_DIFFICULTY), lid);
 }
 static void __attribute__((thiscall)) hk_cars(uint32_t self){
+    g_trim_recs = g_trim_ai = 0;                 /* (a new race's cars: the last one's results are done) */
     if (MR32(G_GAMEMODE) == 0x200u) ai_add();
     g_cars(self);
 }
@@ -232,8 +235,8 @@ static int row_done(uint32_t e, uint32_t laps){ return MR32(e + 8u) != 0 && laps
 void airacers_win_sort_results(void){
     if (!g_ai_on) return;
     if (g_ai_added && MR32(G_NRECS) == g_ai_n0 + g_ai_added){
-        MR32(G_NRECS) = g_ai_n0;
-        if (MR32(G_AI_N) >= g_ai_added) MR32(G_AI_N) -= g_ai_added;
+        MR32(G_NRECS) = g_ai_n0; g_trim_recs = g_ai_added; g_trim_ai = 0;
+        if (MR32(G_AI_N) >= g_ai_added){ MR32(G_AI_N) -= g_ai_added; g_trim_ai = g_ai_added; }
         roam_log("[ai] the results: the race's records are the %u player(s)' again (its next session waits for them only)\n", g_ai_n0);
         g_ai_added = 0;
     }
@@ -260,9 +263,19 @@ void airacers_win_sort_results(void){
 }
 typedef void (__attribute__((thiscall)) *results_t)(uint32_t);
 static results_t g_results;
+/* The screen's rows (0x4BF290, called from 0x4D7240) are as many as the race's racers of every kind ([0x89E7C0] +
+ * [0x89E7C4], the AI, + [0x89E7C8] + [0x89E7CC]): with the AI count already back to the players' (the trip's
+ * results_read can come first), only the first rows were filled and the rest kept the screen's own placeholders
+ * (09:18, the desktop host: two rows "WWWWWWWWWWWWWWWW", a Lancer EVO VIII and an Escalade, place 6, "Opgeblazen
+ * motor", where the two players were 3rd and 4th behind the AI).  So while the game makes the list, the counts are
+ * the race's again, and the players' after */
 static void __attribute__((thiscall)) hk_results(uint32_t self){
     airacers_win_sort_results();
+    uint32_t nr = MR32(G_NRECS), na = MR32(G_AI_N);
+    int put = (g_trim_recs || g_trim_ai) && nr == g_ai_n0;
+    if (put){ MR32(G_NRECS) = nr + g_trim_recs; MR32(G_AI_N) = na + g_trim_ai; }
     g_results(self);
+    if (put){ MR32(G_NRECS) = nr; MR32(G_AI_N) = na; }
 }
 static void results_install(void){
     static const uint8_t want[5] = { 0xa1, 0xa0, 0xe7, 0x89, 0x00 };
