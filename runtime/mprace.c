@@ -2046,7 +2046,10 @@ static void step_back(CPU *c, long f){
         uint32_t mode = rd(G_MC_MODE), next = rd(G_MC_NEXT);
         char nm[40] = "";
         if ((mode & 0xfu) == 2u && okm(next, sizeof nm)) for (unsigned i = 0; i + 1 < sizeof nm && MR8(next + i); i++){ nm[i] = (char)MR8(next + i); nm[i + 1] = 0; }
-        fprintf(stderr, "[mprace] f=%ld the save: mode 0x%x, from 0x%x, next 0x%x%s%s; dialog %u, top %s\n", autotest_frame(), mode,
+        /* (Left, Enter: Yes on a Yes / No question, its No lit first, as "Do you want to overwrite previously saved
+         * game?"; OK on a one-button note.  So the save goes ahead, the prize in it: the laptop's $400 of 09:30 was
+         * still in its bank after a restart, fix phase 3, 2026-11-07) */
+        fprintf(stderr, "[mprace] f=%ld the save: mode 0x%x, from 0x%x, next 0x%x%s%s; dialog %u, top %s: answered Yes / OK (Left, Enter)\n", autotest_frame(), mode,
                 rd(G_MC_FROM), next, nm[0] ? " " : "", nm, rd(G_DLG), autotest_top_fng() ? autotest_top_fng() : "?");
         keys("LR"); M.next = f + 90; return;
     }

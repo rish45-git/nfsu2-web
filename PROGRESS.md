@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `57940571` (bf499b4f). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `0077c98d` (fix phase 3's log line). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -85,9 +85,11 @@ reads this file first:**
    with its window behind Claude's ("its devices are read anyway, for the race trip's keys"): career car -> join
    the game 5.6 s (was 57 s), the race on 16 s after the countdown. Seen: the AI cars now match the first racer's
    tuning (with Rishi's Supra: a 240SX rated 582.7 and an RSX 543.1, both 470+ hp); Street X has no balance.
-3. **Fix phase 3 (Opus): The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
-   game?" (09:30:08-11, three "the save: mode 0x4000151 / 0x151 ..., top GarageMain.fng" lines) and the plugin got
-   past it; unknown whether it answered Yes or No, so a race's prize may not reach the save.
+3. **Fix phase 3 (Opus): The save question on the way back: DONE, no bug (12:00).** On the save screens
+   (MC_Main.fng) the trip presses Left, Enter (mprace.c): Yes on a Yes / No question whose No is lit first, as "Do
+   you want to overwrite previously saved game?", OK on a note. So the save goes ahead with the prize: the laptop's
+   bank went $3,475 -> $3,875 at the 09:30 race and was still $3,875 after its game restarted at 09:38. The log line
+   now says so ("answered Yes / OK (Left, Enter)").
 4. **Fix phase 4 (Opus): The results' details:** "margin 0.00" in every race's log, and once the loser had more points than the winner
    (09:17: RishiLaptop 1st with 7600, Rishi 2nd with 7961). Maybe cosmetic; check what the career credit uses.
 5. **Fix phase 5 (Opus): CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
