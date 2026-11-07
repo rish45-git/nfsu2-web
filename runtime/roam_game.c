@@ -6530,6 +6530,38 @@ void roam_game_join_key(void){
     roam_win_lobby_push(ROAM_LB_JOIN, f->host, f->id, MR32(f->race + 8u));
 }
 #endif
+#ifdef ROAM_HOST_WIN
+/* The TravelKey (F7 by default): fast travel to the GPS's destination.  What players disliked most about the game's
+ * career is the driving between its events (reviews, 2026-11-07 research: "most of the stuff you do in between races
+ * keeps you away from the game's best moments", "the open world aspect was a bit too tedious").  In career free roam
+ * with the GPS on (G_GPS +0x29), the car jumps to where the GPS goes (+0x10: x, y, z, the road point the game routes
+ * to, an event's start or a shop's door) by the game's own hot-position jump, its heading kept, friends' cars ghosts
+ * until clear of it.  Not in a race lobby or its trip, not with a dialog up; said on the HUD's top line */
+#define G_GPS_AT        0x00838590u   /* the GPS: +0x10 where (x y z), +0x29 on */
+void roam_game_travel_key(void){
+    if (!O.on) return;
+    char t[TAG_DUEL_MAX];
+    if (!g_in_roam || !roaming() || rd32(0x00838974u /* a dialog up */) || g_mp.st != MP_IDLE){ roam_game_note("Fast travel: only in career free roam (not in a race lobby)", 4000); return; }
+    uint32_t car = player_car();
+    if (!ok(car, 0x420)) return;
+    if (!MR8(G_GPS_AT + 0x29u)){ roam_game_note("Fast travel: set a GPS destination first (the world map, M: pick a place, Space), then F7", 7000); return; }
+    float gx = MRF32(G_GPS_AT + 0x10u), gy = MRF32(G_GPS_AT + 0x14u), gz = MRF32(G_GPS_AT + 0x18u);
+    if (!(gx > -30000.f && gx < 30000.f && gy > -30000.f && gy < 30000.f && gz > -2000.f && gz < 2000.f)){
+        rlog("[roam] f=%ld fast travel: the GPS's destination %.1f %.1f %.1f is not a place: not done\n", rh_frame(), (double)gx, (double)gy, (double)gz);
+        return;
+    }
+    float dx = gx - MRF32(car + 0x60u), dy = gy - MRF32(car + 0x64u), d = rc_sqrtf(dx * dx + dy * dy);
+    if (d < 40.f){ roam_game_note("Fast travel: you are there already", 3000); return; }
+    MRF32(G_HOTPOS) = gx; MRF32(G_HOTPOS + 4) = gy; MRF32(G_HOTPOS + 8) = gz + 0.5f;
+    MR16(G_HOTPOS_ANGLE) = MR16(car + 0x40cu);
+    MR8(G_HOTPOS_VALID) = 1; MR8(G_HOTPOS_JUMP) = 1;
+    ghost_all(); g_teleports++;
+    snprintf(t, sizeof t, "Fast travel: %.1f km to the GPS's destination", (double)(d / 1000.f));
+    roam_game_note(t, 4000);
+    rlog("[roam] f=%ld fast travel: from %.0f %.0f %.0f to the GPS's destination %.0f %.0f %.0f (%.0f m)\n", rh_frame(),
+         (double)MRF32(car + 0x60u), (double)MRF32(car + 0x64u), (double)MRF32(car + 0x68u), (double)gx, (double)gy, (double)gz, (double)d);
+}
+#endif
 /* the page's lobby actions (roam_plat_lobby_act): the card's next lobby (E), who can join (V), leave (Z from afar), an
  * invite's Join, a new lobby of our own here (B) */
 static void mp_act(int64_t host, int in_roam, int act, uint32_t a, uint32_t b, uint32_t r){
