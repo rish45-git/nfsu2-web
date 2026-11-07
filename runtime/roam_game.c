@@ -5818,7 +5818,11 @@ static void mp_to(int st, int64_t host){
         if (ride && type >= TYPE_STOCK && type < 128u && types){
             char nm[24], t[TAG_DUEL_MAX];
             cstr(types + type * 0x890u, nm, sizeof nm);
-            snprintf(t, sizeof t, "Your %s is an add-on car: in the race the others may see only its spoiler. A stock car shows whole", nm[0] ? nm : "car");
+            /* (AddOnStockRace = 1: guards_win.c sends it with stock parts, and the others draw it whole, 09:13) */
+            if (env_int("NFSU2_ROAM_ADDONRACE", 0, 0, 1))
+                snprintf(t, sizeof t, "Your %s is an add-on car: in the race the others see it with stock parts", nm[0] ? nm : "car");
+            else
+                snprintf(t, sizeof t, "Your %s is an add-on car: in the race the others may see only its spoiler. A stock car shows whole", nm[0] ? nm : "car");
             mp_note(host, t);
             snprintf(g_addon_note, sizeof g_addon_note, "%s", t); g_addon_until = host + 8000000;   /* (the lobby's line, mp_line) */
         }
