@@ -9991,7 +9991,7 @@ static void jump_behind(uint32_t car, float back, float left, float turn){
 /* ---- the AFK bot (the plugin only; a player's ask, 2026-11-07) --------------------------------------------------------
  * A player away from the keyboard in career free roam (no key event of the game's keyboard, roam_keys_player_at, and
  * no throttle, brake or steering on the car's controls: a controller's player counts as here while it drives) for
- * AfkBot seconds (the .ini; 60 by default, 0 off) hands the car to the game's own AI: Player::AutoPilotOn (0x5FAE20,
+ * AfkBot seconds (the .ini; 30 by default, 0 off) hands the car to the game's own AI: Player::AutoPilotOn (0x5FAE20,
  * the one ExtraOptions' AutoDrive key and the end of a race use: the car's driver becomes an AI racer, 3).  The line at
  * the top of the HUD says so while it drives, and friends' name tags say "[BOT]" (RC_OPEN_BOT in the car's state).  Any
  * key gives the car back (AutoPilotOff 0x5FAF10, then SetInputMode 2 as the game's own way back does), and so does
@@ -10027,7 +10027,7 @@ static void afk_set(CPU *c, int64_t host, int on, const char *why){
     }
 }
 static void afk_frame(CPU *c, int64_t host, int in_roam){
-    if (!g_afk.secs) g_afk.secs = env_int("NFSU2_ROAM_AFKBOT", 60, 0, 3600) ? env_int("NFSU2_ROAM_AFKBOT", 60, 0, 3600) : -1;
+    if (!g_afk.secs) g_afk.secs = env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) ? env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) : -1;
     if (g_afk.secs < 0) return;
     if (g_afk.secs < 10) g_afk.secs = 10;
     uint32_t k = roam_keys_player_at(), car = player_car(), ctl = car ? rd32(car + 0x30u) : 0;

@@ -140,7 +140,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_TOHOST",      "ToHost",     "1" },  /* after a race of a lobby we joined: our car next to the host's (0: stay) */
     { "NFSU2_ROAM_SHOWOFF",     "ShowOff",    "1" },  /* friends' cars with their own open parts, the player's sent (0: off) */
     { "NFSU2_ROAM_MOVIES",      "Movies",     "1" },  /* after a multiplayer win: the race's movie, as after a Solo one (0: none) */
-    { "NFSU2_ROAM_AFKBOT",      "AfkBot",     "60" }, /* seconds without input before the game's AI drives the car (0: never) */
+    { "NFSU2_ROAM_AFKBOT",      "AfkBot",     "30" }, /* seconds without input before the game's AI drives the car (0: never) */
     { "NFSU2_ROAM_BONUSCASH",   "BonusCash",  ""  },  /* once per profile: this much into the career's bank (0 or empty: none) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },

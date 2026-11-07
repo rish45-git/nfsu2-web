@@ -163,7 +163,8 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   known yet.
 - **The AFK bot and a one-time bonus** (commit afa9e0c1, installed on the DESKTOP only, 2026-11-07 ~02:10; its old
   plugin and .ini in out/win/backup/*.before-afkbot):
-  - `AfkBot = 60`: after 60 s without a key event or the car's controls moving in career free roam, the game's own
+  - `AfkBot = 30` (was 60; the player's choice, 2026-11-07, build 7b8c11da… on the desktop and on the USB stick for the
+    laptop): after 30 s without a key event or the car's controls moving in career free roam, the game's own
     autopilot drives (Player::AutoPilotOn, the one ExtraOptions' AutoDrive key F6 uses). The HUD's top line says so,
     and friends' tags say "[BOT]" (RC_OPEN_BOT, a spare bit of the open parts' byte, in the shared core; builds before
     it show no tag). Any key gives the car back. Controller buttons don't.
