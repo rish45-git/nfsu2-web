@@ -1520,8 +1520,7 @@ static void write_settings(int host){
     if (laps > 10) laps = 10;
     MR16(b + N_TRACK) = (uint16_t)M.r.track; MR16(b + N_LAPS) = (uint16_t)laps; MR32(b + N_DIR) = M.r.reverse ? 1u : 0u;
     int mx = M.r.players < 2 ? 2 : M.r.players > 6 ? 6 : M.r.players;
-    /* (the test aid NFSU2_MPRACE_TEST_SOLO=1: a game of one, its host alone: roam_game.c mp_min_players) */
-    { const char *solo = getenv("NFSU2_MPRACE_TEST_SOLO"); MR8(b + N_MAX) = (uint8_t)mx; MR8(b + N_MIN) = solo && solo[0] == '1' && !solo[1] ? 1 : 2; }
+    MR8(b + N_MAX) = (uint8_t)mx; MR8(b + N_MIN) = 2;
     MR8(b + N_PASSWD_ON) = 1; gs(b + N_PASSWD, M.r.password, 13); gs(b + N_PASSWD2, M.r.password, 13);
     fprintf(stderr, "[mprace] f=%ld the game: mode %d, track %d%s, %d laps, %d players\n", autotest_frame(), M.r.mode, M.r.track,
             M.r.reverse ? " reverse" : "", laps, mx);
@@ -1807,13 +1806,6 @@ static void step_race(CPU *c, long f){
         }
         int all = n >= (uint32_t)M.r.players && ready == (int)n - 1 && n >= 2;
         int late = f - M.step_at > ROOM_FRAMES && ready >= 1;
-        /* (the test aid NFSU2_MPRACE_TEST_SOLO=1: the host alone starts at once; the room's "can start" (+0x1180)
-         * wants two, so it is set) */
-        { const char *solo = getenv("NFSU2_MPRACE_TEST_SOLO");
-          if (solo && solo[0] == '1' && !solo[1] && n == 1u && M.r.players == 1 && !M.started && f - M.step_at > 60){
-              if (!MR8(ctx + 0x1180u)) mlog("solo test: the room's start allowed with one player%s", "");
-              MR8(ctx + 0x1180u) = 1; all = 1;
-          } }
         if ((all || late) && !M.started && !MR8(ctx + 0x1178u) && MR8(ctx + 0x1180u)){
             uint32_t one = 1; call(c, FN_READY, G_LOBBY, 1, &one); MR8(G_START_CLR) = 0;
             call(c, FN_START, ctx, 0, 0);
