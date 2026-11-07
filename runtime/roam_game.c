@@ -6544,7 +6544,7 @@ void roam_game_travel_key(void){
     if (!g_in_roam || !roaming() || rd32(0x00838974u /* a dialog up */) || g_mp.st != MP_IDLE){ roam_game_note("Fast travel: only in career free roam (not in a race lobby)", 4000); return; }
     uint32_t car = player_car();
     if (!ok(car, 0x420)) return;
-    if (!MR8(G_GPS_AT + 0x29u)){ roam_game_note("Fast travel: set a GPS destination first (the world map, M: pick a place, Space), then F7", 7000); return; }
+    if (!MR8(G_GPS_AT + 0x29u)){ roam_game_note("Fast travel: set a GPS destination first (the world map M: Up/Down a kind, Left/Right a place, C, Yes), then F7", 8000); return; }
     float gx = MRF32(G_GPS_AT + 0x10u), gy = MRF32(G_GPS_AT + 0x14u), gz = MRF32(G_GPS_AT + 0x18u);
     if (!(gx > -30000.f && gx < 30000.f && gy > -30000.f && gy < 30000.f && gz > -2000.f && gz < 2000.f)){
         rlog("[roam] f=%ld fast travel: the GPS's destination %.1f %.1f %.1f is not a place: not done\n", rh_frame(), (double)gx, (double)gy, (double)gz);
@@ -6560,6 +6560,39 @@ void roam_game_travel_key(void){
     roam_game_note(t, 4000);
     rlog("[roam] f=%ld fast travel: from %.0f %.0f %.0f to the GPS's destination %.0f %.0f %.0f (%.0f m)\n", rh_frame(),
          (double)MRF32(car + 0x60u), (double)MRF32(car + 0x64u), (double)MRF32(car + 0x68u), (double)gx, (double)gy, (double)gz, (double)d);
+}
+#endif
+#ifdef ROAM_HOST_WIN
+static int car_sane(uint32_t car);
+static void jump_behind(uint32_t car, float back, float left, float turn);
+#endif
+#ifdef ROAM_HOST_WIN
+/* The FriendKey (F9 by default): fast travel to a friend in free roam -- next to the next friend's car each press
+ * (the ones out on our screen, in slot order), 6 m to its left and 2 m behind, its heading, as the way back to a
+ * race's host does (mp_back_frame); friends' cars are ghosts until clear of ours.  Career free roam only, not in a
+ * race lobby or its trip, not with a dialog up */
+void roam_game_friend_key(void){
+    static int next;
+    if (!O.on || !g_net_ok) return;
+    char t[TAG_DUEL_MAX];
+    if (!g_in_roam || !roaming() || rd32(0x00838974u /* a dialog up */) || g_mp.st != MP_IDLE){ roam_game_note("To a friend: only in career free roam (not in a race lobby)", 4000); return; }
+    uint32_t me = player_car();
+    if (!ok(me, 0x9e0)) return;
+    for (int n = 0; n < NSLOT; n++){
+        int k = (next + n) % NSLOT;
+        Slot *sl = &g_sl[k];
+        if (sl->st != SL_ACTIVE || sl->hidden || sl->unseen_since || !ok(sl->car, 0x9e0) || !car_sane(sl->car)) continue;
+        float dx = MRF32(sl->car + 0x60u) - MRF32(me + 0x60u), dy = MRF32(sl->car + 0x64u) - MRF32(me + 0x64u), d = rc_sqrtf(dx * dx + dy * dy);
+        next = k + 1;
+        if (d < 25.f){ snprintf(t, sizeof t, "To a friend: %s is right here", sl->name); roam_game_note(t, 3000); return; }
+        jump_behind(sl->car, 2.f, 6.f, 0.f);
+        ghost_all(); g_teleports++;
+        snprintf(t, sizeof t, "To a friend: next to %s (%.1f km)", sl->name, (double)(d / 1000.f));
+        roam_game_note(t, 4000);
+        rlog("[roam] f=%ld to a friend: next to %s's car, %.0f m away\n", rh_frame(), sl->name, (double)d);
+        return;
+    }
+    roam_game_note("To a friend: no friend's car out in free roam right now", 4000);
 }
 #endif
 /* the page's lobby actions (roam_plat_lobby_act): the card's next lobby (E), who can join (V), leave (Z from afar), an
@@ -10234,6 +10267,15 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
         if (!cu && mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && rd32(0x0089e7f8u)){
             MR32(0x0089e7f8u) = 0;
             rlog("[roam] f=%ld multiplayer race: catch-up off (CatchUp = 0)\n", rh_frame());
+        }
+        /* ...and in the career's own races (CareerCatchUp = 0, the default): the reviews' complaint (GameSpot: "the
+         * opposing cars will slow down quite a bit if they take a big lead, making them very easy to beat"; players'
+         * mods turn it off), so the AI races flat out, ahead or behind */
+        static int ccu = -1;
+        if (ccu < 0){ ccu = env_int("NFSU2_ROAM_CAREERCATCHUP", 0, 0, 1); rlog("[roam] career races: catch-up %s\n", ccu ? "the game's" : "off"); }
+        if (!ccu && rd32(G_CAREER_RACE) && rd32(G_FLOW) == 6u && rd32(0x0089e7f8u)){
+            MR32(0x0089e7f8u) = 0;
+            rlog("[roam] f=%ld career race: catch-up off (CareerCatchUp = 0)\n", rh_frame());
         }
         /* (BotSkill, 2026-11-07 27ed3432..: it wrote [0x89E7A8] each frame, which is the race's traffic level -- the
          * network setup 0x526830 sets it from the race type's traffic option (0x83AAC8), and 0x4FE9F0 adds that many
