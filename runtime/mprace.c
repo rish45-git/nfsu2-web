@@ -958,9 +958,12 @@ static void credit_decide(void){
     /* (the results' screen asks again each frame while we have no place: logged when the answer changes) */
     if (M.logged_credit && M.logged_credit - 1 == M.credit && M.logged_cplace == M.place && !strcmp(M.logged_winner, M.winner)) return;
     M.logged_credit = M.credit + 1; M.logged_cplace = M.place; snprintf(M.logged_winner, sizeof M.logged_winner, "%s", M.winner);
-    fprintf(stderr, "[mprace] f=%ld the race in the career: %s (place %d, winner %s%s%s, margin %.2f)\n", autotest_frame(),
+    /* (the race's own margin, not M.lead: that is the career's, 0 for a race that does not count, and the log said
+     * "margin 0.00" for every such race, fix phase 4, 2026-11-07) */
+    fprintf(stderr, "[mprace] f=%ld the race in the career: %s (place %d, winner %s%s%s, margin %.2f %%%s)\n", autotest_frame(),
             !M.r.credit ? "it does not count for us" : M.credit == MPC_WON ? "we won it: it counts" : M.credit == MPC_FRIEND ? "our friend won it: it counts" : "not won",
-            M.place, M.winner[0] ? M.winner : "none", M.credit == MPC_FRIEND ? ", a friend" : "", "", (double)M.lead);
+            M.place, M.winner[0] ? M.winner : "none", M.credit == MPC_FRIEND ? ", a friend" : "", "", (double)margin,
+            M.credit != MPC_NONE ? ", the career's" : "");
 }
 int mprace_credit(void){ return M.credit; }
 int mprace_credited(void){ return M.credited; }
@@ -1187,9 +1190,11 @@ static void results_read(int log){
         r->jump = r->ours ? 0.f : racenet_jump(r->name);
         if (r->finished && drift) r->points = pts > 0.f && pts < 1e7f ? (int)(pts + 0.5f) : 0;
         else if (r->finished) r->time = t < 4000u * 3600u ? (float)t / 4000.f : 0.f;
-        if (log) fprintf(stderr, "[mprace]   row %d: car %04x%s, %s, %s, %.2f s, %.0f points, %.3f laps, "
+        /* (+0x104 is the drift score: it ranks a drift only; in the others the times do, and a loser's higher number,
+         * 09:17's 7961 behind 7600, meant nothing: so said in the log, fix phase 4) */
+        if (log) fprintf(stderr, "[mprace]   row %d: car %04x%s, %s, %s, %.2f s, %.0f points%s, %.3f laps, "
                          "average %.2f m/s (%.0f m), top %.2f m/s, its largest jump %.1f m\n", k + 1, id, r->ours ? " (ours)" : "",
-                         r->name, r->finished ? "finished" : "not finished", (double)t / 4000.0, (double)pts, (double)laps,
+                         r->name, r->finished ? "finished" : "not finished", (double)t / 4000.0, (double)pts, drift ? "" : " (drift only)", (double)laps,
                          (double)avg, (double)r->dist, (double)top, (double)r->jump);
     }
 }

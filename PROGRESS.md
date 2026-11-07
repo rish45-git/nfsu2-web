@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `0077c98d` (fix phase 3's log line). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `3c1247d1` (fix phases 3-4's log lines). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -90,8 +90,11 @@ reads this file first:**
    you want to overwrite previously saved game?", OK on a note. So the save goes ahead with the prize: the laptop's
    bank went $3,475 -> $3,875 at the 09:30 race and was still $3,875 after its game restarted at 09:38. The log line
    now says so ("answered Yes / OK (Left, Enter)").
-4. **Fix phase 4 (Opus): The results' details:** "margin 0.00" in every race's log, and once the loser had more points than the winner
-   (09:17: RishiLaptop 1st with 7600, Rishi 2nd with 7961). Maybe cosmetic; check what the career credit uses.
+4. **Fix phase 4 (Opus): The results' details: DONE, log only (12:10).** "margin 0.00": the log printed M.lead, the
+   career's margin (credit_decide sets it only for a race that counts), so 0 for every LAN race that does not; it now
+   prints the race's own margin (", the career's" when it counts). The career's credit always had the real one. The
+   "points" are the drift score (+0x104): they rank a drift only, the others go by the times (09:17: 294.51 s ahead
+   of 300.88 s, right); the row lines now mark them "(drift only)" in the other races. Build 3c1247d1.
 5. **Fix phase 5 (Opus): CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
 6. **Fix phase 6 (Opus): Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
