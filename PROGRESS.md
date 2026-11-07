@@ -52,7 +52,11 @@ says native clients are welcome there.
 1. The trip's background stall (above); the 0x5CE83E crash (AddOnStockLook = 1), with the laptop's two dumps.
 2. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
-3. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
+3. **Cutscenes:** Rishi has seen no story cutscene since the project started (only a race-intro "how to drift"
+   video). No mod skips them (ExtraOptions SkipMovies = 0, WidescreenFix SkipIntro = 0, ours Movies = 1). 10:10, a
+   new career ("cuttest" profile; "rishi" untouched, backed up in this session's scratchpad): the story intro (the
+   comic pages, then the "6 MONTHS AGO..." movie) plays with the plugin off (renamed .off) and with 825c3aa1 on. So
+   the plugin does not block it; the story cutscenes later in the career (stage ends) are not checked yet.
 4. **Open bugs:**
    - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
    - the 0x1D2780 start crash (D3D9 CreateDevice failing on the laptop with its screen asleep);
