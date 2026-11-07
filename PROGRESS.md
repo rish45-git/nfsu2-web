@@ -52,6 +52,13 @@ says native clients are welcome there.
   (records 0x83AD90+0x5954, body +0x18..+0x434). 10:16-10:23: rishi's slot 2 a SUPRA (77 parts, visual rating
   4.98), picked in Car Select, autosaved 10:21:05, still there after a restart. A test profile "cuttest" exists;
   saves backed up in this session's scratchpad (savebackup-1010, -1045).
+- **Later, Rishi's ask: a friend in Seattle, no Tailscale, a zip he unzips and plays.** Found: a public IPv4
+  (not written here: the repo is public), but the second hop is 100.64.0.1 (CGNAT range), and no IPv6: a router port forward may not reach
+  the desktop. To do: Rishi reads the router's WAN IP (192.168.0.1); public -> forward TCP 8691 to 192.168.0.109,
+  add the address to NFSU2_HOST, a firewall rule for the friend's IP only, a dynamic DNS name; CGNAT -> a public IP
+  from the provider, or a named tunnel (wss). The zip: dinput8.dll (ASI loader), the plugin, its ini preset (his
+  name, the server, AiRacers = 0, room/crew), a how-to; no EA files, no add-on cars (he races Rishi in a stock car).
+  Expected ping Seattle <-> the desktop ~140-170 ms, whoever hosts.
 - **Rishi's rule (09:35):** quit races and close games once a test has its answer; test saves don't matter.
 
 **Next, in order:**
