@@ -10044,7 +10044,9 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
      * no dialog), the player's ask too, 2026-11-07: there the AI races for the player (a network race makes the
      * player's car a human's only at its start, so not before the race runs) */
     uint32_t race = rd32(G_RACE), drv = ok(car, 0x30) ? MR32(car + 0x24u) : 0;
-    int racing = mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && ok(race, 0x28) && MR32(race) == 4u && !rd32(G_DLG_ID) &&
+    /* (not [0x838974]: it holds 8 or 9 through a LAN race with no dialog up, left from the LAN menus -- the live test,
+     * 2026-11-07 02:53, every line "race state 4, driver 1, dialog 00000008"; the pause menu stops the race, state 6) */
+    int racing = mprace_phase() == MPR_RACE && rd32(G_FLOW) == 6u && ok(race, 0x28) && MR32(race) == 4u &&
                  (drv == 1u || g_afk_on);
     int can = roamok || racing;
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
