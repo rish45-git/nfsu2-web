@@ -273,6 +273,16 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       frame cost 0.1 ms, SPEED2's memory 836 -> 870 MB, level from 07:49. (The bots drive a fixed circle at one height
       through walls and planters: a test tool's, not the game's.)
     - Not done: CareerCatchUp in a career race (Rishi was on the desktop with another game in front from 07:58).
+    - **08:07-08:17, the laptop on the stick's build c212de5c** (installed by its session on Rishi's OK, its game
+      started with the screen awake): it joined the desktop's free roam at 08:07:57 and stayed 9+ minutes with no
+      drop ("no packets" 0, LEAVE 0, ~14 snaps/s) while its session worked in the Claude window, its game behind:
+      **RunInBackground works on the laptop** (before, its game froze within seconds of losing focus).
+      **F9 tried between the PCs:** 2004 m to the laptop's 240SX in one press ("next to RishiLaptop's car"), and again
+      every 15-20 s (85-675 m: the laptop's AFK bot drove its car on). Found: F9 (and F7, J) did not count as the
+      player at the keys, so the desktop's AFK bot stayed on after a jump (the game's action-mapped keyboard never
+      reports them); fixed in b855280c (build 1555ce8c: a hotkey sets roam_keys' g_player_at), not installed yet.
+      Item 7's look (the SENTRAB12 whole on the laptop?) was asked of the laptop's session; its answer cannot reach
+      this session (Remote Control off here): to read from it or from Rishi.
     - **The morning's list (with Rishi and the laptop):**
       1. The laptop: the stick's build c212de5c (backup, copy, sha256sum -c), its game started with its screen awake
          (07:27 it failed to make its D3D9 device unattended).
