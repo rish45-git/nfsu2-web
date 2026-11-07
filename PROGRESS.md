@@ -8,31 +8,41 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
-## Where to resume (2026-11-07 08:45)
+## Where to resume (2026-11-07 09:30)
 
 **State:**
 
-- **Builds:** the repo builds `1555ce8c` (b855280c, the hotkey AFK fix on top). The desktop runs `c212de5c` with
-  `AddOnStockRace = 1`. The laptop installed `c212de5c` from the stick at about 08:05 (its session did it on Rishi's
-  OK). The stick (`laptop-update`, also in `C:\dev\laptop-update`) is in the laptop and holds `c212de5c`.
-- **Everything is pushed** to `fork/native-online` (rish45-git/nfsu2-web).
-- **The desktop's game ended at 08:35:08**, right after a key with its window in front. The log has no "unloaded"
-  line and there's no new crash dump: closed by hand? Ask Rishi.
-- **Remote Control:** this session can't turn it on (HTTP 403 every time, also after an app restart and with the
-  other desktop sessions' Remote Control off). So the laptop's session gets this session's messages but can't
-  answer them. Rishi relays, or a new session tries. Not caused by telemetry variables: none are set. Public
-  reports of the same 403 name no fix.
-- **Remote Control turned off during that test:** the desktop sessions "Phase 3: Virtual Winsock for Online lobby"
-  and "NFSU2 native client to Underground 2 Revived server". The app won't turn it back on until each runs a turn.
+- **Builds:** the repo builds `c887a807` (a8353e0c). The desktop runs `e3cc8f3b` (15369e81: the results-screen fix,
+  with 1555ce8c's hotkey AFK fix) with `AddOnStockLook = 0`, `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs
+  `c212de5c` with `AiRacers = 0` (set by its session at 09:09). `C:\dev\laptop-update` holds `1555ce8c` with the
+  laptop's ini (`AiRacers = 0`) and a README note, `sha256sum -c` all OK; the stick itself is still in the laptop
+  with `c212de5c`.
+- **Remote Control works** in this session (2026-11-07 08:45 chat): the laptop's session answers by SendMessage.
+- **The desktop rebooted at 08:36** (that ended its game at 08:35). After it the netsh port proxy for
+  192.168.0.109/100.76.38.37:8691 didn't listen (not even after Rishi restarted IP Helper): a user-mode forwarder
+  (`fwd8691.py` in this session's scratchpad: asyncio, both addresses -> 127.0.0.1:8691) stands in, run in the
+  background. The firewall rules allow any program on 8691.
+- **Item 7 done:** free roam (AddOnStockLook = 1, 08:57): the laptop drew the SENTRAB12 whole, stock parts, no
+  spoiler. Race (AddOnStockRace = 1, 09:05 and 09:12): whole on the laptop's grid with stock wheels; the desktop's
+  log "[guard] AddOnStockRace: ... went with stock parts (N so far)". But AddOnStockLook = 1 crashes the laptop
+  (0x5CE83E below), so the desktop runs AddOnStockLook = 0 until that's fixed.
+- **AiRacers on the joining laptop stalls the race:** each PC adds its own AI; with 2 the laptop fell to ~2.5 fps
+  at the race load and never answered the host ("The race can not be started...", 09:06, as at 06:03). With 0 the
+  09:12 circuit ran end to end at ~37-52 fps (the laptop won, 294.51 s).
+- **Fixed, the host's results screen** (e3cc8f3b): rows 3-4 were the screen's placeholders ("WWWWWWWWWWWWWWWW",
+  Lancer EVO VIII, Escalade, place 6, "Opgeblazen motor"): the row filler 0x4BF290 (called from 0x4D7240) makes as
+  many rows as [0x89E7C0]+[0x89E7C4]+[0x89E7C8]+[0x89E7CC], and our results trim had lowered the AI count first.
+  Being checked in the 09:24 race.
+- **Open, Rishi: "the bots' vehicles aren't visible"** (the AI racers on the desktop). They do drive the route (the
+  09:18 results: 7.7-9.2 km, 35 m/s average); they left the line while our car stood. To check: a grid screenshot
+  in the countdown.
 
 **Next, in order:**
 
-1. **Item 7, the look:** does the laptop draw the desktop's SENTRAB12 whole in free roam now (AddOnStockLook)?
-   Asked of the laptop's session at 08:09; its answer can't reach this session. Then a two-PC race for
-   AddOnStockRace: the SENTRAB12 whole on the laptop? Watch the desktop's log for "[guard] AddOnStockRace: ... (N so
-   far)".
-2. **Install `1555ce8c`** on both PCs. A plugin hotkey (F7, F9, J) now gives the car back from the AFK bot.
-3. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet.
+1. The AI racers' cars on screen (above); the results screen with e3cc8f3b.
+2. **Install** the newest build on both PCs via the stick (it needs to come back to the desktop).
+3. **CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
+   "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
 4. **The missing cutscene** in Rishi's solo race: which one (before the race, after the win, a stage end)?
 5. **Open bugs:**
    - the 0x4405CF crash (06:41, a race trip's quit; not seen again);
