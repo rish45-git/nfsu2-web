@@ -200,7 +200,7 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
-  - **Overnight, 2026-11-07 05:20-06:45** (build fe60dceb..., commits up to 33f27181; on the desktop, on the USB stick and in
+  - **Overnight, 2026-11-07 05:20-06:55** (build 99a7072c..., commits up to e2dabe2b; on the desktop, on the USB stick and in
     C:\dev\laptop-update; the laptop runs 42fdf870 with AiRacers = 0 until the stick reaches it):
     - **AI racers, fixed and tried in a two-PC race (06:24):** the AI finish (FinishRacer's network report 0x602000 now
       succeeds for car ids 100+, the plugin finishes them at their laps); the results in the race's order (0x4D7240
@@ -228,6 +228,9 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;
       0x1D2780 a start). The plugin's 0x438140 replacement matches the game's walk step for step. Not reproduced.
+    - **Phantom presses, fixed (e2dabe2b):** a hotkey whose key is down as the game comes in front is no press, and the
+      lobby's Engage counts only with the game in front for 0.5 s. The final race (06:48) went through: the lobby's
+      Enter and the laptop's J worked; the AI 1st and 2nd, the results in order, the host back in 5 s, no crash.
     - **Open: keys nobody pressed?** At 06:41:06 the laptop's log has "[keys] JoinKey" (GetAsyncKeyState J) with no
       one at its keys (its session pressed nothing), and 37 s later the desktop's lobby went to its countdown as by
       Enter. If the player didn't press them, phantom key states start races.
