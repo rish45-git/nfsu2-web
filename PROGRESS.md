@@ -67,21 +67,30 @@ says native clients are welcome there.
   AGO..." movie) plays with the plugin off and on. The later story scenes (stage ends) are not checked.
 
 **Next: the fix phases, in order (Rishi's list, 2026-11-07 ~10:45; "fix phase" so they don't mix with the build
-phases 0-6 below):**
+phases 0-6 below). Opus on high for phases 1-7; Fable for 8 and 9, the hardest (a crash dump's double unload; a
+GPS driver of our own), or for any phase Opus circles on twice:**
 
-1. **Fix phase 1: bots on the laptop, a retest:** with `AiRacers = 2` the laptop fell to ~2.5 fps at the race load and the host
+1. **Fix phase 1 (Opus): Bots on the laptop, a retest:** with `AiRacers = 2` the laptop fell to ~2.5 fps at the race load and the host
    called the race off (09:06, and 06:03), so it runs `AiRacers = 0`. That was before 6038e3ff/bba7aad4 (the AI
    racers' cars are now loaded with the players'): one race with the laptop on `AiRacers = 2` tells if that fixed it.
-2. **Fix phase 2: The trip stalls in the background:** a joiner's LAN-menu steps ("the career car" -> "join the game") wait while
+2. **Fix phase 2 (Opus): The trip stalls in the background:** a joiner's LAN-menu steps ("the career car" -> "join the game") wait while
    its window is behind another (the laptop, 57 s, 09:49), with RunInBackground on; the host waits or gives up.
-3. **Fix phase 3: The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
+3. **Fix phase 3 (Opus): The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
    game?" (09:30:08-11, three "the save: mode 0x4000151 / 0x151 ..., top GarageMain.fng" lines) and the plugin got
    past it; unknown whether it answered Yes or No, so a race's prize may not reach the save.
-4. **Fix phase 4: the results' details:** "margin 0.00" in every race's log, and once the loser had more points than the winner
+4. **Fix phase 4 (Opus): The results' details:** "margin 0.00" in every race's log, and once the loser had more points than the winner
    (09:17: RishiLaptop 1st with 7600, Rishi 2nd with 7961). Maybe cosmetic; check what the career credit uses.
-5. **Fix phase 5: CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
+5. **Fix phase 5 (Opus): CareerCatchUp in a career race:** look for "career race: catch-up off" in the log. Not run yet. (A LAN race logs
    "multiplayer race: catch-up off (CatchUp = 0)": a different line.)
-6. **Fix phase 6: The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
+6. **Fix phase 6 (Opus): Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
+   CreateDevice failing on the laptop with its screen asleep).
+7. **Fix phase 7 (Opus): Ideas from players' complaints:**
+   - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
+     0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
+     Needs a race win to test;
+   - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
+
+8. **Fix phase 8 (Fable): The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
    that Rishi drives the Supra (a stock car).
    **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after
    the server went away (the desktop rebooted at 08:36; "Rishi left: timeout" 08:34:50, "switch: cannot reach the
@@ -95,15 +104,8 @@ phases 0-6 below):**
    0x493F20 at chunk id 0x80134100 (a geometry pack). So a car geometry pack is unloaded with a model already
    unlinked/freed: a double unload of the stock-look add-on car's pack, or our ride unload and the world's on the
    same pack. Test at 09:03: desktop AddOnStockLook = 0, AddOnStockRace = 1;
-7. **Fix phase 7: Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
-   CreateDevice failing on the laptop with its screen asleep).
-8. **Fix phase 8: The bots following the GPS** (item 4 of the players' list: the game's AI ignores the GPS, so it needs a driver
+9. **Fix phase 9 (Fable): The bots following the GPS** (item 4 of the players' list: the game's AI ignores the GPS, so it needs a driver
    of our own).
-9. **Fix phase 9: Ideas from players' complaints:**
-   - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
-     0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
-     Needs a race win to test;
-   - lower career traffic ([0x89E7A8] is set before the cars are made, so it needs a hook at the race's setup).
 
 **Later (Rishi: "too confusing right now"):** the friend in Seattle without Tailscale (above).
 
