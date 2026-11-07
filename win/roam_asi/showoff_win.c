@@ -18,11 +18,11 @@
  *  - the drawing: while a friend's car is drawn, its type's list holds that car's own nodes only (none: all closed),
  *    and the list is as it was again right after (0x620AE0 and 0x615A10 go through the plugin first: a jump at each
  *    one's start, the 6 bytes it replaces run from a block of ours, then on into the game's).
- * Only car types whose animations the game has in (the player's own type: the game loads one type's at a time) open on
- * friends' cars; another type's show closed (runtime/showoff.c loads them, and takes over 0x438140 for it, which this
- * does not).  With the animations thrown away (a garage, a shop, a race trip: 0x438140) and loaded again, the bank is
- * a new one: the friend's nodes are closed then and opened again (showoff.c drop_ours: a node turned while its
- * type has no bank calls through 0). */
+ * The game has one car type's animations in at a time (the player's own); a friend's car of another type gets its
+ * type's loaded once one of its parts opens (bank_ready, as runtime/showoff.c), and 0x438140, the game's throwing away
+ * of every bank, is ours (hk_banks_drop: our files unloaded first).  With the animations thrown away (a garage, a
+ * shop, a race trip) and loaded again, the bank is a new one: the friend's nodes are closed then and opened again
+ * (showoff.c drop_ours: a node turned while its type has no bank calls through 0). */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "roam_host_win.h"
@@ -124,11 +124,96 @@ static uint32_t so_kind(uint32_t ri, int part, uint32_t *mark){
     return kind;
 }
 static void car_close(Car *k){ for (int p = 0; p < 4; p++) if (k->node[p]) MR32(k->node[p] + 0x10u) = 1u; k->has = 0; }
+
+/* ---- other car types' animations (the player's list, item 12: doors between different car models) ---------------
+ * The game has one type's part animations in at a time (its car loader's one record), so a friend's car of another
+ * type showed its parts closed.  Here, as runtime/showoff.c bank_ready: once a friend's car of a type with no bank has
+ * a part open, CARS\<type>\PARTS_ANIMATIONS.BIN is loaded for it (0x57CFB0, as 0x61C600 loads the game's; out in free
+ * roam only), and its bank comes onto the list; not in after 10 s, it is loaded again, 3 tries at most.  The game
+ * throws every bank away (0x438140 with 0, right after unloading its record's file: a garage, a shop, a cover shoot, a
+ * race trip): ours are unloaded first, the game's way, and the walk reads the next bank before it deletes one (the
+ * browser's crash of 2026-11-02 when ours were still on it: the walk went on from freed memory).  Their cars' parts
+ * show closed until their banks are in again */
+#define FN_LOAD        0x0057cfb0u   /* cdecl (file, 0, 0, 1, callback, its argument) -> the resource file */
+#define FN_UNLOAD      0x00580e90u   /* cdecl (resource file) */
+#define FN_NOP         0x004022c0u   /* ret: the load's callback */
+#define FN_BANK_FREE   0x004380f0u   /* thiscall bank: lets go of its animations */
+#define FN_BANKS_DROP  0x00438140u   /* cdecl (a car type's hash, 0: every bank) */
+#define G_RACE         0x00890118u
+#define G_CAREER_RACE  0x00863470u
+#define G_RACEKIND     0x0089e7b0u
+#define G_GAMEMODE     0x00850078u
+#define SO_TYPES       16
+typedef struct { uint32_t type, file; int st, tries; DWORD since; char path[64]; } Bank;
+static Bank g_bank[SO_TYPES];
+static int g_nbank, g_banks_hooked;
+static int roam_world(void){
+    uint32_t r = rd32(G_RACE), pl = rd32(G_PLAYER1);
+    return rd32(G_FLOW) == 6u && ok(r, 0x28) && MR32(r + 0x24u) == 1u && (MR32(r) == 4u || MR32(r) == 6u) &&
+           !rd32(G_CAREER_RACE) && rd32(G_RACEKIND) == 0u && !(rd32(G_GAMEMODE) & 0x208u) && pl && rd32(pl + 4u);
+}
+/* a car type's animations in (1), on the way (0), or not to be had (-1) */
+static int bank_ready(uint32_t ri){
+    uint32_t ti = ok(ri, 0x10) ? rd32(ri + RI_TYPE) : 0, type = ok(ti, 0xd4) ? MR32(ti + 0xd0u) : 0;
+    if (!type) return -1;
+    if (bank_of(type)) return 1;
+    if (!g_banks_hooked || !roam_world()) return 0;
+    Bank *k = 0;
+    for (int i = 0; i < g_nbank && !k; i++) if (g_bank[i].type == type) k = &g_bank[i];
+    if (!k){
+        if (g_nbank == SO_TYPES) return -1;
+        k = &g_bank[g_nbank++]; memset(k, 0, sizeof *k); k->type = type;
+    }
+    DWORD now = GetTickCount();
+    if (k->st == 1 && now - k->since < 10000u) return 0;
+    if (k->st){
+        if (k->file) roam_log("[showoff] %s: the part animations are not in: loading them again (the first file left loaded)\n", k->path);
+        k->file = 0; k->st = 0;
+    }
+    if (k->tries >= 3) return -1;
+    char nm[24]; int i = 0;
+    for (; i < 23 && ok(ti + (uint32_t)i, 1) && MR8(ti + (uint32_t)i); i++) nm[i] = (char)MR8(ti + (uint32_t)i);
+    nm[i] = 0;
+    if (!nm[0]) return -1;
+    snprintf(k->path, sizeof k->path, "CARS\\%s\\PARTS_ANIMATIONS.BIN", nm);
+    uint32_t a[6] = { (uint32_t)(uintptr_t)k->path, 0, 0, 1, FN_NOP, 0 };
+    k->file = call(FN_LOAD, 0, 6, a);
+    k->st = 1; k->since = now; k->tries++;
+    roam_log("[showoff] %s: loading a friend's car type's part animations (%s)\n", k->path, k->file ? "under way" : "FAILED");
+    return 0;
+}
+/* the game's 0x438140, ours in its place: our files unloaded first, then its walk, the next bank read first */
+static void __attribute__((cdecl)) hk_banks_drop(uint32_t type){
+    int n = 0;
+    for (int i = 0; i < g_nbank; i++){
+        Bank *k = &g_bank[i];
+        if (!k->file || !bank_of(k->type)) continue;                  /* (still loading: not on the list yet) */
+        uint32_t a = k->file;
+        call(FN_UNLOAD, 0, 1, &a);
+        k->file = 0; k->st = 0; k->tries = 0; n++;
+    }
+    if (n){
+        for (int i = 0; i < SO_FRIENDS; i++) car_close(&g_car[i]);  /* (opened again once their banks are back) */
+        roam_log("[showoff] the game throws the part animations away: %d of ours unloaded first\n", n);
+    }
+    uint32_t e = rd32(G_BANKS), b = e ? e - 4u : 0;
+    for (int k = 0; b && b != G_BANKS - 4u && k < 4096 && ok(b, 0x28); k++){
+        uint32_t ne = MR32(b + 4u), next = ne ? ne - 4u : 0;          /* read before the bank is deleted */
+        if (!type || MR32(b + 0x24u) == type){
+            uint32_t pv = MR32(b + 8u), nx = MR32(b + 4u), one = 1;
+            MR32(pv) = nx; MR32(nx + 4u) = pv;
+            call(FN_BANK_FREE, b, 0, 0);
+            call(MR32(MR32(b)), b, 1, &one);
+        }
+        b = next;
+    }
+}
 /* the car's parts to what its player has open (runtime/showoff.c car_apply): only with its type's bank in, and the
  * same bank as when its nodes were made (else closed at once, and made again) */
 static void car_apply(Car *k, int slot){
     uint32_t b = bank_of(k->type);
     if (k->has && b != k->bank){ car_close(k); }
+    if (!b && k->want) bank_ready(k->ri);                             /* (another type's: loaded for it) */
     if (!b){ k->bank = 0; return; }
     k->bank = b;
     if (k->want == k->has) return;
@@ -249,5 +334,8 @@ void showoff_win_install(void){
      * its body its own; nothing breaks) */
     void *l = detour(LIGHTS_FN, w_lights, 6, (void *)hk_lights, "the cars' lights");
     if (l) g_lights = (lights_t)l;
+    /* (with no hook here no other type's animations are loaded: a friend's car of another type shows its parts closed) */
+    static const uint8_t w_drop[5] = { 0xa1, 0x9c, 0x7c, 0x82, 0x00 };              /* mov eax, [0x827C9C] */
+    g_banks_hooked = detour(FN_BANKS_DROP, w_drop, 5, (void *)hk_banks_drop, "the animation banks' drop") != 0;
     g_on = 1;
 }
