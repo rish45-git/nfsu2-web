@@ -10048,6 +10048,17 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
                  (drv == 1u || g_afk_on);
     int can = roamok || racing;
     if (!g_afk.idle_since || here) g_afk.idle_since = host;
+    /* (what the race's bot waits for, every 10 s of a race while it does not drive: the first live test, 2026-11-07
+     * 02:41, a drag race, sat 40 s idle and it never came) */
+    static int64_t diag_at;
+    if (mprace_phase() == MPR_RACE && !g_afk_on && host - diag_at >= 10000000){
+        diag_at = host;
+        float th = ok(ctl, 0x220) ? MRF32(ctl + 0x20cu) : -1.f, br = ok(ctl, 0x220) ? MRF32(ctl + 0x214u) : -1.f;
+        float st = ok(ctl, 0x220) ? (float)(int16_t)MR16(ctl + 0x1e0u) / 32767.f : 0.f;
+        rlog("[roam] f=%ld AFK in the race: %s; idle %.0f s of %d; flow %u, race state %u, driver %u, dialog %08x, throttle %.2f "
+             "brake %.2f steer %.2f, key at %u\n", rh_frame(), racing ? "can take over" : "can not", (double)(host - g_afk.idle_since) / 1e6,
+             g_afk.secs, rd32(G_FLOW), ok(race, 0x28) ? MR32(race) : 99u, drv, rd32(G_DLG_ID), (double)th, (double)br, (double)st, k);
+    }
     /* a race that ended under the bot: the game's own autopilot takes the car past the line (its results): ours is let go
      * without a call, the car left to the game */
     if (g_afk_on && !here && mprace_phase() == MPR_RACE && !(ok(race, 0x28) && MR32(race) == 4u)){
