@@ -98,8 +98,21 @@ reads this file first:**
 5. **Fix phase 5 (Opus): CareerCatchUp in a career race: DONE (12:02).** A solo career circuit (Patrick's, the
    card's Accept, then the plugin's Solo): "12:02:37 career race: catch-up off (CareerCatchUp = 0)" as the race
    started (build 3c1247d1): the race option [0x89E7F8], the game's rubber band, cleared. Quit right after.
-6. **Fix phase 6 (Opus): Rare crashes:** the 0x4405CF crash (06:41, a race trip's quit; not seen again); the 0x1D2780 start crash (D3D9
-   CreateDevice failing on the laptop with its screen asleep).
+6. **Fix phase 6 (Opus): Rare crashes: looked into, both to Fable's phase 9 (12:15).**
+   - **0x4405CF** (06:41): the memory pool's free (0x440540) on a broken block 2 s into a trip's "quit to the main
+     menu", a friend's car in slot 0: the same moment and kind as 0x5CE83E (a car pack unloaded twice as the world
+     goes, phase 9). Not seen again; most likely one root: phase 9 takes it.
+   - **0x1D2780 at the start** (the laptop, its screen asleep): the start 0x5D2740 calls 0x5B9A60 (width, height:
+     the present parameters) and 0x5B9B70 (CreateDevice into [0x870974]: hardware, then software vertex
+     processing; once more without anti-aliasing), then uses the device unchecked at 0x5D2780 (mov ecx,[eax],
+     [0x870974] 0). Tried, not kept: a stub at 0x5D277B trying again every 2 s (0x5B9A60, 0x5B9B70) while there
+     is no device. Tests on the desktop (NFSU2_ROAM_TEST_DEVFAIL: the device made released, as a failure leaves
+     it): the retry's CreateDevice made a device, but the game then died at once in the plugin's log writer (its
+     timestamp's divsd, ws_log +0x22F9F) with 0xC00002B4 (multiple floating-point traps), with the floating point
+     masked around the plugin's code and no log in the retry; a 32768x32768 size failed in the driver itself. Two
+     rounds, so not kept (reverted; 3c1247d1 again, its start checked clean). For Fable: why the thread's floating
+     point traps after a second device (ReShade's d3d9.dll and scripts\ReShade.asi both load), or retry before
+     the first CreateDevice (wait for the display at 0x5D2740), or leave it (it only hits an unattended start).
 7. **Fix phase 7 (Opus): Ideas from players' complaints:**
    - a career payout multiplier against the grind. The bank is Career [0x85AD40] +0x7134. The game adds to it at
      0x528380, 0x532D19, 0x532D64, 0x54136C, 0x5417C5 and 0x541901; which one is the race's purse isn't known yet.
