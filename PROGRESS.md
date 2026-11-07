@@ -228,7 +228,13 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       back onto the route", the AI on again 1.5 s later, then 2nd to the line.
     - **The game stops when its window is not in front:** the laptop's frame counter went f=77228 -> 77229 in 3.5 minutes
       while the Claude window had focus, and it sent nothing ("Rishi seems away" call-offs, invites not seen). The game's
-      own pause on focus loss; with a player at the keys the window is in front. A later fix: keep it running.
+      own pause on focus loss; with a player at the keys the window is in front.
+      **Fixed (RunInBackground = 1, build aa70141f, 07:00):** the cause is the message pump 0x5BF1C0: not active
+      ([0x870988], WM_ACTIVATEAPP 0x5CCF3C) and no network game of the game's own (0x5F00F0) -> GetMessage, which waits
+      for the next window message. The plugin removes that je (0x5BF219), so the pump always peeks. The game's focus
+      pause (WM_ACTIVATE 0x5CCDA6: 0x4810F0 on [0x82B884], resumed by 0x481210) is unchanged. Tried on the desktop in
+      free roam with Notepad in front for 75 s: 5400 frames per 30 s and the network on (the old build's log had stopped
+      at 06:55 with the Claude window in front); back in front, the car drove. On the stick and in C:\dev\laptop-update.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;

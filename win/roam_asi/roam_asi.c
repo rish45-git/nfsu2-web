@@ -151,6 +151,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_AIRACERS",    "AiRacers",   "2" },  /* AI racers in each LAN race beside the players (0..4; the grid has 6 places) */
     { "NFSU2_ROAM_AIEDGE",      "AiEdge",     "5" },  /* their cars rated this % above the best player's (0..50) */
     { "NFSU2_ROAM_AISKILL",     "AiSkill",    "9" },  /* their skill, 0..9 (9 the game's top) */
+    { "NFSU2_ROAM_BACKGROUND",  "RunInBackground", "1" }, /* 1: the game goes on with its window not in front (0: it stops, the game's own way) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },

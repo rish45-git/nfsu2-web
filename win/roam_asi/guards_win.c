@@ -29,12 +29,41 @@ static void load_watch_install(void);
 
 static void put_rel(uint8_t *at, uint32_t target){ int32_t r = (int32_t)(target - ((uint32_t)(uintptr_t)at + 4u)); memcpy(at, &r, 4); }
 
+/* ---- the game runs on with its window not in front (RunInBackground) -----------------------------------------------
+ * The game's message pump (0x5BF1C0, once a frame from GameLoop): with its window active ([0x870988], WM_ACTIVATEAPP's
+ * wParam, 0x5CCF3C) or a game of its own network on (0x5F00F0) it peeks (PeekMessage, PM_REMOVE); otherwise it WAITS
+ * (GetMessage) for the next window message, so the whole game, the plugin's frame and its network with it, stops.  The
+ * laptop, 2026-11-07: its frame count went 77228 -> 77229 in 3.5 minutes with another window in front, its friends'
+ * games heard nothing from it ("seems away" call-offs, invites not seen).  The fix: the pump always peeks (the je at
+ * 0x5BF219, "not active: wait", is gone).  The game's own focus pause (WM_ACTIVATE, 0x5CCDA6: the world and its sound
+ * held until the window is back) is not changed: the world waits, the plugin and its network go on. */
+#define PUMP_SITE 0x005bf212u   /* mov eax,[0x870988]; test eax,eax; je 0x5bf22c (GetMessage) */
+static void background_install(void){
+    static const uint8_t want[9] = { 0xa1, 0x88, 0x09, 0x87, 0x00, 0x85, 0xc0, 0x74, 0x11 };
+    uint8_t *site = (uint8_t *)(uintptr_t)PUMP_SITE;
+    DWORD old;
+    const char *v = roam_opt("NFSU2_ROAM_BACKGROUND");
+    if (v && v[0] == '0'){ roam_log("[guard] RunInBackground = 0: the game stops while its window is not in front\n"); return; }
+    if (!ok(PUMP_SITE, sizeof want)) return;
+    if (site[7] == 0x90 && site[8] == 0x90 && !memcmp(site, want, 7)){ roam_log("[guard] the message pump already runs on in the background (another mod)\n"); return; }
+    if (memcmp(site, want, sizeof want)){
+        roam_log("[guard] the message pump (0x%08x) is not the game's (another mod?): the game still stops in the background\n", PUMP_SITE);
+        return;
+    }
+    if (!VirtualProtect(site + 7, 2, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[7] = 0x90; site[8] = 0x90;
+    VirtualProtect(site + 7, 2, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site + 7, 2);
+    roam_log("[guard] RunInBackground: the game goes on with its window not in front (friends keep hearing from it)\n");
+}
+
 /* roam_asi.c, at the start (with the plugin on) */
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
     uint8_t *site = (uint8_t *)(uintptr_t)SND_SITE;
     DWORD old;
     if (g_on) return;
+    background_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
         return;
