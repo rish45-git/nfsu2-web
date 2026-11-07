@@ -200,6 +200,30 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **AI racers in multiplayer races (item 5), built and tried** (commits 30afe20f, 01c75c74, 82ba25c3; build 42fdf870…
+    on the desktop and the laptop, 2026-11-07 05:16; win/roam_asi/airacers_win.c):
+    - How: at the start of the race's car making (0x6065B0, thiscall from 0x60A774) in a LAN race, the game's own
+      quick-race AI adder 0x53EE90 (count) runs; the players' grid places (+0, +3) are restored after its 0x532010, the
+      AI get the free places, skill +0x901 = AiSkill (9: 0x610510's top), names Claude, ChatGPT, Gemini, DeepSeek
+      (+0x90C), the game's random numbers [0x7EA624] from the lobby id meanwhile. Each game adds its own: they are not
+      synced, each PC's results have its own AI. Not in drag (needs the drag driver) or drift races.
+    - Their cars: rated AiEdge % (5) above the best player's car, never below their own (mprace.c balance_race).
+    - Their finish: in a network race FinishRacer reports it (0x602000 by car id; none for an AI, car ids 100+) and takes
+      it back when the report fails; the laps' reports the same. 0x602000 now succeeds at once for car ids 100+, and the
+      plugin finishes an AI once its laps are done (+9, or the route share +0x14 in laps) with its time (+0x198).
+    - Their names on the results: 0x4BF3C0 took the network player's name by car id in a network race; car ids 100+
+      take the record's now.
+    - The results' finishers are counted from the players' rows (mprace.c results_read: "far").
+    - Corrected: BotSkill (27ed3432) wrote [0x89E7A8], which is the race's TRAFFIC level (0x526830 sets it from the race
+      type's traffic option, 0x4FE9F0 adds that many traffic cars); removed. The AI difficulty is [0x89E7F4].
+    - Tried with the laptop: 04:49 (3 AI): they raced (avg 36 m/s against the laptop's 32), the results had them
+      "not finished" with the race's end time and every row unfinished (fixed: the far count); 05:05 (3 AI, named): names
+      on the results, the players' places right (the laptop 1st among players), the AI still unfinished (fixed: 0x602000,
+      not tried yet). The desktop hosted both times and its way back sat on "Starting Game Session..." for 4 minutes
+      both times (failed); suspect: the AI that never finished (the session waits for every racer's finish report).
+    - A LAN race of one player can't be had: the game says "The game failed to start" (05:18), so this needs two PCs.
+    - Next, with the laptop: a race with 4 AI; check the AI's finish ("[ai] an AI racer ... finished ... kept 1"), the
+      results' order (an AI that has not finished below everyone who did), and the host's way back.
   - **Round 2 of the player's list** (commits 27ed3432..801e559f, build d54c898f…, installed on the desktop 04:21, on the
     USB stick and in C:\dev\laptop-update for the laptop; its old plugin in out/win/backup/*.before-34d11caa):
     - **Item 1, the race bot keeping the route** (5f04e498): while it races, the car's share of the route done (the race
