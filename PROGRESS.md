@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `825c3aa1` (bba7aad4). The desktop runs `825c3aa1` with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `78134ee9` (e151c1e5). The desktop runs `78134ee9` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 0`. The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -45,6 +45,13 @@ says native clients are welcome there.
 - **Found, the trip stalls in the background:** on the laptop the LAN-menu step from "the career car" to "join the
   game" waited 57 s with its window behind another (RunInBackground on, 30 fps), and went on 0.9 s after the window
   came to the front (09:49:53). The host waited in its room meanwhile. Not looked into.
+- **New, CarSaveKey / CarPutKey** (e151c1e5, build `78134ee9`, desktop only; off by default): Rishi wanted the
+  RacingHart Supra the main menu shows a profile without a career car (no preset record: the front end's own ride
+  at 0x8371B0, from 0x4A7890). F11 in the main menu makes a record body from it (as 0x516B90: 0x516A60, 0x503950,
+  the drift setups reset) into `NFSU2FreeRoam.car2`; F12, with a profile, puts it into the first free career slot
+  (records 0x83AD90+0x5954, body +0x18..+0x434). 10:16-10:23: rishi's slot 2 a SUPRA (77 parts, visual rating
+  4.98), picked in Car Select, autosaved 10:21:05, still there after a restart. A test profile "cuttest" exists;
+  saves backed up in this session's scratchpad (savebackup-1010, -1045).
 - **Rishi's rule (09:35):** quit races and close games once a test has its answer; test saves don't matter.
 
 **Next, in order:**
