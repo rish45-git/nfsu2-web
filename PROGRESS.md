@@ -154,7 +154,12 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   - A G win the loaded career doesn't have waits again (W).
   - The save is looked for under the game folder's `SAVEGAMES`, then Documents.
   - asi_check now allows ReadFile, GetFileAttributesExA and GetSystemTimeAsFileTime, and its size limit is 640 KB.
-- Not tried in the game: all three. The README in `C:\dev\laptop-update` gets them when the build is installed.
+- **A host stuck on "Starting Game Session..."** (seen 2026-11-07 01:41, the laptop hosting, a Sprint): its player left
+  the results 17 s before the joiner did, and the host's game put up that "please wait" (no button) and waited for a
+  next session the joiner had left; the trip waited (it lets a no-button "please wait" end by itself) until its 4
+  minutes on the way back ran out. Now (plugin only) Esc every 5 s from 15 s on. Whether Esc ends that dialog is not
+  known yet.
+- Not tried in the game: all of these. The README in `C:\dev\laptop-update` gets them when the build is installed.
 
 **Works in the game** (desktop + laptop, 2026-11-06 22:24 to 2026-11-07 00:49):
 - free roam online with names over cars (`Labels`) and the HUD's top line natively;

@@ -1919,6 +1919,15 @@ static void step_back(CPU *c, long f){
         if (nb == 0 || cancel){
             if (!M.wait_at){ M.wait_at = f; mlog("a \"please wait\" on the way back: \"%s\"", t); }
             if (cancel && f - M.wait_at > 60 * 5){ mlog("... called off%s", ""); dlg_answer(rd(G_DLG_MSG3)); M.wait_at = 0; M.next = f + 30; }
+#ifdef ROAM_HOST_WIN
+            /* one with no button that does not end: Esc, every 5 s from 15 s on (a host whose player left the results
+             * before the joiner did sat on "Starting Game Session..." for good, its game waiting for a next session the
+             * others had left: the plugin, 2026-11-07 01:41; the trip gave up after 4 minutes with the dialog still up) */
+            else if (nb == 0 && f - M.wait_at > 60 * 15 && f - M.scr_tap >= 60 * 5){
+                fprintf(stderr, "[mprace] f=%ld ... no end to it after %ld s: Esc\n", autotest_frame(), (f - M.wait_at) / 60);
+                autotest_tap(K_ESC, 6); acted(f);
+            }
+#endif
             return;
         }
         M.wait_at = 0;
