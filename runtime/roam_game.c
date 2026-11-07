@@ -10115,6 +10115,49 @@ static void afk_route(CPU *c, int64_t host, uint32_t race, uint32_t car){
     g_afr.reset_at = g_afr.best_at = host; g_afr.re_on_at = host + 1500000; g_afr.resets++;
     if (back) g_afr.best = d;
 }
+/* The free-roam bot (the player's list, item 3: "it gets stuck on walls, runs into traffic"): AutoPilotOn's racer AI
+ * (RaceCarController, the car's driver kind 3).  The game's traffic driver instead (Car::SetDriverKind 0x5EBA30 with 4,
+ * TrafficController) closed the game 2 s after it took the player's car (tried on the desktop, 2026-11-07 04:03), so it
+ * stays the racer.  The live run before it (04:00-04:02): 2.5 km in two minutes at 65-105 km/h, no hard hit.  Stuck
+ * (under 8 km/h for 5 s, from 8 s after the takeover: the AI's own start is slow) the car goes back onto the road as the
+ * R key does (Player::ResetCar), the AI off for it and on again 1.5 s later; at most once per 10 s.  Every 5 s a line:
+ * its speed, the way it came, its hits (its speed down 25 km/h from one frame to the next), the GPS's target and the
+ * road route's state (0x81CBC0: +0 0 none .. 3 done, +0x17A4 the car it routes for) */
+static struct { int64_t log_at, hit_at, slow_since, reset_at, re_on_at; float x, y, v, dist; int hits, n, resets; } g_afd;
+static void afk_roam(CPU *c, int64_t host, uint32_t car){
+    uint32_t pl = rd32(G_PLAYER1);
+    if (!ok(car, 0x440) || !ok(pl, 0x60)) return;
+    float x = MRF32(car + 0x60u), y = MRF32(car + 0x64u), v = MRF32(car + 0x42cu) * 3.6f;
+    if (g_afd.n++){
+        float dx = x - g_afd.x, dy = y - g_afd.y, d = rc_sqrtf(dx * dx + dy * dy);
+        if (d < 50.f) g_afd.dist += d;
+        if (g_afd.v - v > 25.f && host - g_afd.hit_at > 1000000){ g_afd.hits++; g_afd.hit_at = host; }
+    }
+    g_afd.x = x; g_afd.y = y; g_afd.v = v;
+    if (g_afd.re_on_at && host >= g_afd.re_on_at){
+        g_afd.re_on_at = 0; g_afd.slow_since = 0;
+        if (MR32(car + 0x24u) != 3u) rh_call(c, FN_AUTOPILOT_ON, pl, 0, 0, 0);
+        rlog("[roam] f=%ld AFK in free roam: the AI drives again after the reset (driver %u)\n", rh_frame(), MR32(car + 0x24u));
+    }
+    if (!g_afd.re_on_at){
+        if (v >= 8.f || host - g_afk.on_at < 8000000) g_afd.slow_since = 0;
+        else if (!g_afd.slow_since) g_afd.slow_since = host;
+        else if (host - g_afd.slow_since >= 5000000 && host - g_afd.reset_at >= 10000000){
+            rlog("[roam] f=%ld AFK in free roam: stuck (%.0f km/h for %.0f s at %.0f %.0f): the car back onto the road (the R key's reset)\n",
+                 rh_frame(), (double)v, (double)(host - g_afd.slow_since) / 1e6, (double)x, (double)y);
+            rh_call(c, FN_AUTOPILOT_OFF, pl, 0, 0, 0);
+            rh_call(c, FN_RESETCAR, pl, 0, 0, 0);
+            g_afd.reset_at = host; g_afd.re_on_at = host + 1500000; g_afd.resets++; g_afd.slow_since = 0;
+        }
+    }
+    if (host - g_afd.log_at < 5000000) return;
+    g_afd.log_at = host;
+    int gps = MR8(0x00838590u + 0x29u);
+    float gx = MRF32(0x00838590u + 0x10u), gy = MRF32(0x00838590u + 0x14u), gd = rc_sqrtf((gx - x) * (gx - x) + (gy - y) * (gy - y));
+    rlog("[roam] f=%ld AFK in free roam: %.0f km/h at %.0f %.0f, %.0f m so far, %d hit(s), %d reset(s); driver %u; GPS %s (%.0f m to go); "
+         "route state %u for %s\n", rh_frame(), (double)v, (double)x, (double)y, (double)g_afd.dist, g_afd.hits, g_afd.resets, MR32(car + 0x24u),
+         gps ? "on" : "off", gps ? (double)gd : 0., MR32(0x0081cbc0u), MR32(0x0081cbc0u + 0x17a4u) == car ? "our car" : "another car");
+}
 static void afk_frame(CPU *c, int64_t host, int in_roam){
     if (!g_afk.secs) g_afk.secs = env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) ? env_int("NFSU2_ROAM_AFKBOT", 30, 0, 3600) : -1;
     if (g_afk.secs < 0) return;
@@ -10184,8 +10227,10 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
     if (!g_afk_on && host - g_afk.idle_since >= (int64_t)g_afk.secs * 1000000){
         afk_set(c, host, 1, "");
         memset(&g_afr, 0, sizeof g_afr); g_afr.log_at = host;
+        memset(&g_afd, 0, sizeof g_afd); g_afd.log_at = host;
     }
     if (g_afk_on && racing) afk_route(c, host, race, car);
+    if (g_afk_on && !racing) afk_roam(c, host, car);
     if (g_afk_on && host - g_afk.note_at >= 2000000){
         g_afk.note_at = host;
         afk_note(host, "You're away: the AI drives your car [BOT]. Press any key to take it back");
