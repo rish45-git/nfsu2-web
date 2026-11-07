@@ -190,6 +190,11 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
   - The race AFK bot (commit feba7c8e, build 92e95660…) and `ForceStockPartsOnAddOnOpponents = 1` are installed on the
     desktop (02:30; backups out/win/backup/*.before-racebot, *.before-forcestock) and on the USB stick for the laptop;
     the laptop keeps `AllNewCarsInitiallyUnlocked = 0`. Not tried yet.
+  - **To do, the player's ask (03:09): AI opponents in multiplayer races,** 3-4 beside the two players (the races feel
+    empty). The game's LAN race has human racers only, so every PC needs the same AI cars at the same places. Either
+    the host's game races them and its cars' states go to the others (as free roam's friends' cars are shown), or each
+    game spawns the same AI locally. Needs research: how a race adds AI racers (Quick Race does, 0x89E7A0's options),
+    and whether the LAN race's racer list takes them.
   - **To do, the player's ask (02:48): bots follow the game's GPS.** When a player sets a GPS destination on the map,
     the bots drive there along its route. Asked: "if I set a gps all bots follow to that gps too", so the
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
