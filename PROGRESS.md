@@ -34,7 +34,7 @@ says native clients are welcome there.
   set every 5 s up to the test's 6 (torque 447 -> 596 N m, grip 1.30 -> 1.90). The undo never logged (the race's state
   stays 4 through the results and the race object goes with the world): 272c4982 takes the sets off when every racer
   is done ("the race is over (everyone finished; state 4, flow 6), the AI racers' sets taken off", race 5). In race 5
-  the laptop's own AI (the real rule, d1fed18c) rose because Rishi's bot-driven Supra led: set 1 at 15.2 / 16.8 s
+  the laptop's own AI (the real rule, d1fed18c) rose because Rishi drove the Supra himself and led: set 1 at 15.2 / 16.8 s
   behind, a set every 5 s up to 21 and 22 sets (torque 249 -> 643 N m, grip 4.30), "AI racer 100 overtook the leading
   human with 21 set(s): no more, kept"; the fall-back restart was not seen (the AI stayed ahead). The gap measure jumps
   across laps ("closed -32.5 s in 5 s"), and 20+ sets make the physics silly (-3 km/h, grip 4): a cap or smaller steps
