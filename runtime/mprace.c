@@ -1152,7 +1152,13 @@ static int results_place(void){
  * when the race ended too (30 s after the first was over the line: a player who stood still had a time and 2nd
  * place), so a racer finished where it came as many whole laps as the farthest (not the race's laps: a downhill drift
  * is one run of a 2-lap network race).  Into M.res; log: each in the log too */
+#ifdef ROAM_HOST_WIN
+void airacers_win_sort_results(void);   /* airacers_win.c: the rows in the race's order with AI racers in it */
+#endif
 static void results_read(int log){
+#ifdef ROAM_HOST_WIN
+    airacers_win_sort_results();
+#endif
     uint32_t pl = rd(G_PLAYER1), car = pl ? rd(pl + 4u) : 0, n = rd(G_RESULTS_N), e[MPRACE_RESULTS_MAX];
     int ours = okm(car, 0xc) ? (int)(uint16_t)MR16(car + 0xau) : -1, drift = rd(G_NET + N_MODE) == 3u, ne = 0;
     float far = 0.f;

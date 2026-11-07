@@ -17,7 +17,7 @@
  *    same names, and the same cars where racer 0's car is the same), and are as they were after.
  * Every game of the race adds its own: each one's AI race on that game alone (as the game's own split screen's
  * traffic), so they are not where they are on the other screens, and each game's results have its own.  The race
- * still has 6 places: AiRacers (4 by default, 0 off) is cut to what is free; they are Claude, ChatGPT, Gemini and
+ * still has 6 places: AiRacers (2 by default, the frame rate the player asked for; up to 4, 0 off) is cut to what is free; they are Claude, ChatGPT, Gemini and
  * DeepSeek (the player's pick), and race in circuits, sprints, URL and Street X (no drag or drift).  Log lines "[ai]". */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -59,6 +59,8 @@ static int opt_num(const char *name, int def, int lo, int hi){
 static int g_ai_on;
 static uint32_t g_ai_race;
 static uint32_t g_ai_done;               /* the AI racers finished in this race: a bit each, by car id - 100 */
+static uint32_t g_ai_n0, g_ai_added;      /* the race's records before ours, and how many we added */
+static void results_install(void);
 static void report_install(void);
 static void names_install(void);
 static void put_rel(uint8_t *at, uint32_t target);
@@ -67,7 +69,7 @@ static cars_t g_cars;
 static uint8_t g_page[4096] __attribute__((aligned(4096)));
 
 static void ai_add(void){
-    int want = opt_num("NFSU2_ROAM_AIRACERS", 4, 0, 4), skill = opt_num("NFSU2_ROAM_AISKILL", 9, 0, 9);
+    int want = opt_num("NFSU2_ROAM_AIRACERS", 2, 0, 4), skill = opt_num("NFSU2_ROAM_AISKILL", 9, 0, 9);
     if (!want) return;
     /* (circuits, sprints, URL and Street X: a drag race's AI needs the game's drag driver, a drift has no cars to race) */
     uint32_t mode = MR32(G_NETMODE);
@@ -91,15 +93,34 @@ static void ai_add(void){
     if (n <= 0){ roam_log("[ai] no free place on the grid (%d player(s)): no AI racers\n", humans); return; }
     /* the game's random numbers from the lobby (the same on every game of it), as they were after */
     uint32_t rnd = MR32(G_RAND), lid = roam_game_lobby_id();
-    MR32(G_RAND) = (lid ? lid : 0x5eed1234u) ^ 0x9e3779b9u;
     uint8_t noai = MR8(G_NOAI); MR8(G_NOAI) = 0;
-    uint32_t a = (uint32_t)n;
-    roam_win_call(FN_ADD_AI, 0, 0, 1, &a);
+    /* one at a time, each kept only with one of the game's own cars (its ride's type, +0x10, below 31: the 31 player
+     * cars).  An Unlimiter add-on car as an AI opponent stalled the host's race load for good (06:03: an AI's
+     * SENTRAB12, the 7.7 MB model that also never loads as a LAN opponent, item 7; the laptop lost the host), and the
+     * add-ons' models are the heavy ones for the frame rate.  Each try its own seed from the lobby (the same tries on
+     * every game), 12 at most; each one kept gets its racer index (+1: the car's id) 100 and up, one after another */
+    int kept = 0;
+    for (int tryn = 0; tryn < 12 && kept < n; tryn++){
+        MR32(G_RAND) = ((lid ? lid : 0x5eed1234u) ^ 0x9e3779b9u) + (uint32_t)tryn * 0x85ebca6bu;
+        uint32_t c0 = MR32(G_NRECS), a = 1;
+        roam_win_call(FN_ADD_AI, 0, 0, 1, &a);
+        recs = MR32(G_RECS);
+        uint32_t c1 = MR32(G_NRECS);
+        if (c1 != c0 + 1u || c1 > REC_MAX || !ok(recs, REC_SZ * c1)){ roam_log("[ai] the game's AI adder left %u records (was %u): stopped\n", c1, c0); break; }
+        uint32_t r = recs + c0 * REC_SZ, type = MR32(r + 0x10u);
+        if (type >= 31u){
+            MR32(G_NRECS) = c0;                                           /* (not kept) */
+            roam_log("[ai]   an AI racer's car not kept: type %u (not one of the game's own cars)\n", type);
+            continue;
+        }
+        MR8(r + 1u) = (uint8_t)(100 + kept);
+        kept++;
+    }
     MR8(G_NOAI) = noai;
     MR32(G_RAND) = rnd;
     recs = MR32(G_RECS);
     uint32_t n1 = MR32(G_NRECS);
-    if (n1 > REC_MAX || n1 < n0 || !ok(recs, REC_SZ * n1)){ roam_log("[ai] the game's AI adder left %u records (was %u): not touched\n", n1, n0); return; }
+    if (n1 > REC_MAX || n1 < n0 || !ok(recs, REC_SZ * n1)){ roam_log("[ai] the race's records are %u (were %u): not touched\n", n1, n0); return; }
     for (uint32_t i = 0; i < n0; i++){ MR8(recs + i * REC_SZ) = keep0[i]; MR8(recs + i * REC_SZ + REC_GRID) = keep3[i]; }
     int k = 0;
     for (uint32_t i = n0; i < n1 && k < nfree; i++, k++){
@@ -112,10 +133,14 @@ static void ai_add(void){
         char nm[17]; int j = 0;
         for (; j < 16 && MR8(r + REC_NAME + (uint32_t)j) >= 0x20 && MR8(r + REC_NAME + (uint32_t)j) < 0x7f; j++) nm[j] = (char)MR8(r + REC_NAME + (uint32_t)j);
         nm[j] = 0;
-        roam_log("[ai]   AI racer %d: %s, grid place %d, skill %d (kind %u)\n", k + 1, nm[0] ? nm : "(no name)", freep[k], skill, MR32(r + REC_KIND));
+        uint32_t ty = MR32(r + 0x10u), tys = ok(0x008a1cccu, 4) ? MR32(0x008a1cccu) : 0, tn = tys && ty < 64u ? tys + ty * 0x890u : 0;
+        char cn[16]; int q2 = 0;
+        for (; tn && ok(tn, 16) && q2 < 15 && MR8(tn + (uint32_t)q2) >= 0x20 && MR8(tn + (uint32_t)q2) < 0x7f; q2++) cn[q2] = (char)MR8(tn + (uint32_t)q2);
+        cn[q2] = 0;
+        roam_log("[ai]   AI racer %d: %s, grid place %d, skill %d, car %s (type %u), car id %u\n", k + 1, nm[0] ? nm : "(no name)", freep[k], skill, cn, ty, MR8(r + 1u));
     }
     MR32(G_AI_N) += (uint32_t)(n1 - n0);
-    if (n1 > n0){ g_ai_on = 1; g_ai_race = 0; g_ai_done = 0; }
+    if (n1 > n0){ g_ai_on = 1; g_ai_race = 0; g_ai_done = 0; g_ai_n0 = n0; g_ai_added = n1 - n0; }
     roam_log("[ai] the LAN race: %u AI racer(s) beside %d player(s) (AiRacers %d, AiSkill %d, difficulty %u, lobby %08x)\n",
              n1 - n0, humans, want, skill, MR32(G_DIFFICULTY), lid);
 }
@@ -190,6 +215,71 @@ static void report_install(void){
     roam_log("[ai] the network's finish report (0x%08x): an AI racer's finish is its own\n", REPORT_FN);
 }
 
+/* The results, in the order the race was run.  A network race's places are the network's: each player's game
+ * reports its own finish, and an AI racer of ours gets the next free place as it crosses the line, so the rows came
+ * mixed (the third try, 05:44: an AI 1st at 102.8 s, the laptop 2nd at 133.4 s, ours 3rd at 159.1 s, then three AI
+ * at 109.7, 131.0 and 132.0 s).  So as the results screen makes its list (0x4D7240, thiscall screen, from 0x4E9697),
+ * and as the trip reads them (mprace.c results_read), the rows (0x851044, [0x85105C] of them) are put in order: the
+ * finished (as the trip counts them: done, +8, and the race's laps, +0xC8 against the race's +0xBE8) by their time
+ * (+0xC), then the rest by how far they came; each row's place (+0) its new one.  Only in a race with ours in it.
+ * And the race's records are the players' again there (0x89E814 back to its count before ours, the AI count with
+ * it): the host's next session after the race ("Starting Game Session...", the results' Continue) waited for good,
+ * all three tries with AI racers, the AI finished or not */
+#define G_RESULTS     0x00851044u
+#define G_RESULTS_N   0x0085105cu
+#define RESULTS_FN    0x004d7240u        /* mov eax, [0x89E7A0] (5 bytes) */
+static int row_done(uint32_t e, uint32_t laps){ return MR32(e + 8u) != 0 && laps && MRF32(e + 0xc8u) >= (float)laps - 0.01f; }
+void airacers_win_sort_results(void){
+    if (!g_ai_on) return;
+    if (g_ai_added && MR32(G_NRECS) == g_ai_n0 + g_ai_added){
+        MR32(G_NRECS) = g_ai_n0;
+        if (MR32(G_AI_N) >= g_ai_added) MR32(G_AI_N) -= g_ai_added;
+        roam_log("[ai] the results: the race's records are the %u player(s)' again (its next session waits for them only)\n", g_ai_n0);
+        g_ai_added = 0;
+    }
+    uint32_t n = MR32(G_RESULTS_N), race = MR32(G_RACE), laps = race && ok(race, 0xbf0) ? MR32(race + 0xbe8u) : 0, e[8];
+    if (n < 2 || n > 8) return;
+    for (uint32_t i = 0; i < n; i++){ e[i] = MR32(G_RESULTS + 4u * i); if (!ok(e[i], 0x114)) return; }
+    int moved = 0;
+    for (uint32_t i = 1; i < n; i++){
+        uint32_t x = e[i]; int j = (int)i - 1;
+        for (; j >= 0; j--){
+            uint32_t y = e[j]; int dx = row_done(x, laps), dy = row_done(y, laps);
+            int before = dx != dy ? dx > dy : dx ? MR32(x + 0xcu) < MR32(y + 0xcu) : MRF32(x + 0xc8u) > MRF32(y + 0xc8u);
+            if (!before) break;
+            e[j + 1] = y; moved = 1;
+        }
+        e[j + 1] = x;
+    }
+    if (!moved) return;
+    for (uint32_t i = 0; i < n; i++){ MR32(G_RESULTS + 4u * i) = e[i]; MR32(e[i]) = i + 1u; }
+    roam_log("[ai] the results put in the race's order (the finished by their times, then the rest)\n");
+    for (uint32_t i = 0; i < n; i++)
+        roam_log("[ai]   %u: car %04x, %s, %.2f s, %.3f laps\n", i + 1u, MR32(e[i] + 4u) & 0xffffu, row_done(e[i], laps) ? "finished" : "not finished",
+                 (double)MR32(e[i] + 0xcu) / 4000.0, (double)MRF32(e[i] + 0xc8u));
+}
+typedef void (__attribute__((thiscall)) *results_t)(uint32_t);
+static results_t g_results;
+static void __attribute__((thiscall)) hk_results(uint32_t self){
+    airacers_win_sort_results();
+    g_results(self);
+}
+static void results_install(void){
+    static const uint8_t want[5] = { 0xa1, 0xa0, 0xe7, 0x89, 0x00 };
+    uint8_t *site = (uint8_t *)(uintptr_t)RESULTS_FN, *t = g_page + 192;
+    DWORD old;
+    if (!ok(RESULTS_FN, 5) || memcmp(site, want, 5)){ roam_log("[ai] the results' list (0x%08x) is not the game's: in the network's order\n", RESULTS_FN); return; }
+    memcpy(t, site, 5);
+    t[5] = 0xe9; put_rel(t + 6, RESULTS_FN + 5u);
+    FlushInstructionCache(GetCurrentProcess(), t, 16);
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)hk_results);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+    g_results = (results_t)(void *)t;
+    roam_log("[ai] the results' list (0x%08x): in the race's order\n", RESULTS_FN);
+}
+
 /* Their names on the results screen.  Its row of a racer other than our own player (0x4BF3C0) takes, in a network
  * race (0x5F00F0), the name of the network player with the row's car id (0x5F0220 +0x12), else the racer record's
  * (+0x90C): the AI racers' rows had no name (the first try, 04:54).  So a car id of 100 and up (ours: RacerInfo's
@@ -231,7 +321,7 @@ void airacers_win_install(void){
     DWORD old;
     if (done) return;
     done = 1;
-    if (!opt_num("NFSU2_ROAM_AIRACERS", 4, 0, 4)){ roam_log("[ai] AiRacers = 0: no AI racers in multiplayer races\n"); return; }
+    if (!opt_num("NFSU2_ROAM_AIRACERS", 2, 0, 4)){ roam_log("[ai] AiRacers = 0: no AI racers in multiplayer races\n"); return; }
     if (!ok(CARS_FN, 6) || memcmp(site, want, 6)){ roam_log("[ai] the race's car making (0x%08x) is not the game's (another mod?): no AI racers\n", CARS_FN); return; }
     if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
     uint8_t *t = g_page;
@@ -246,4 +336,5 @@ void airacers_win_install(void){
     roam_log("[ai] the race's car making (0x%08x) goes through the plugin: AI racers in LAN races\n", CARS_FN);
     names_install();
     report_install();
+    results_install();
 }

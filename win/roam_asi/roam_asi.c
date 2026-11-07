@@ -148,7 +148,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_CAREERCATCHUP", "CareerCatchUp", "0" }, /* career races: 0 no catch-up (the AI does not slow down when it leads), 1 the game's */
     { "NFSU2_ROAM_TRAVELKEY",   "TravelKey",  "F7" }, /* fast travel: to the GPS destination in career free roam (0: none) */
     { "NFSU2_ROAM_FRIENDKEY",   "FriendKey",  "F9" }, /* fast travel: next to a friend in free roam, the next one each press (0: none) */
-    { "NFSU2_ROAM_AIRACERS",    "AiRacers",   "4" },  /* AI racers in each LAN race beside the players (0..4; the grid has 6 places) */
+    { "NFSU2_ROAM_AIRACERS",    "AiRacers",   "2" },  /* AI racers in each LAN race beside the players (0..4; the grid has 6 places) */
     { "NFSU2_ROAM_AIEDGE",      "AiEdge",     "5" },  /* their cars rated this % above the best player's (0..50) */
     { "NFSU2_ROAM_AISKILL",     "AiSkill",    "9" },  /* their skill, 0..9 (9 the game's top) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */

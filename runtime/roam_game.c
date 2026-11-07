@@ -6536,7 +6536,7 @@ void roam_game_join_key(void){
  * keeps you away from the game's best moments", "the open world aspect was a bit too tedious").  In career free roam
  * with the GPS on (G_GPS +0x29), the car jumps to where the GPS goes (+0x10: x, y, z, the road point the game routes
  * to, an event's start or a shop's door) by the game's own hot-position jump, its heading kept, friends' cars ghosts
- * until clear of it.  Not in a race lobby or its trip, not with a dialog up; said on the HUD's top line */
+ * until clear of it.  With no GPS on: onto the nearest race start a lobby can be opened at (the middle of its trigger).  Not in a race lobby or its trip, not with a dialog up; said on the HUD's top line */
 #define G_GPS_AT        0x00838590u   /* the GPS: +0x10 where (x y z), +0x29 on */
 void roam_game_travel_key(void){
     if (!O.on) return;
@@ -6544,8 +6544,26 @@ void roam_game_travel_key(void){
     if (!g_in_roam || !roaming() || rd32(0x00838974u /* a dialog up */) || g_mp.st != MP_IDLE){ roam_game_note("Fast travel: only in career free roam (not in a race lobby)", 4000); return; }
     uint32_t car = player_car();
     if (!ok(car, 0x420)) return;
-    if (!MR8(G_GPS_AT + 0x29u)){ roam_game_note("Fast travel: set a GPS destination first (the world map M: Up/Down a kind, Left/Right a place, C, Yes), then F7", 8000); return; }
-    float gx = MRF32(G_GPS_AT + 0x10u), gy = MRF32(G_GPS_AT + 0x14u), gz = MRF32(G_GPS_AT + 0x18u);
+    float gx, gy, gz;
+    const char *to = "the GPS's destination";
+    if (MR8(G_GPS_AT + 0x29u)){ gx = MRF32(G_GPS_AT + 0x10u); gy = MRF32(G_GPS_AT + 0x14u); gz = MRF32(G_GPS_AT + 0x18u); }
+    else {
+        /* no GPS: the nearest race start a lobby can have (the career's open races and the multiplayer-only ones:
+         * g_spot), more than 40 m away, at its trigger's road point (+0x34: x, y, z in whole metres) */
+        float mx = MRF32(car + 0x60u), my = MRF32(car + 0x64u), best = 1e12f; int bi = -1;
+        for (int i = 0; i < g_spot.n; i++){
+            uint32_t tr = g_spot.s[i].trig;
+            if (!ok(tr, 0x40)) continue;
+            const float *b = g_spot.s[i].box;
+            float x = 0.5f * (b[0] + b[2]), y = 0.5f * (b[1] + b[3]), d2 = (x - mx) * (x - mx) + (y - my) * (y - my);
+            if (d2 > 40.f * 40.f && d2 < best){ best = d2; bi = i; }
+        }
+        if (bi < 0){ roam_game_note("Fast travel: set a GPS destination first (the world map M: Up/Down a kind, Left/Right a place, C, Yes), then F7", 8000); return; }
+        /* (on the start itself: the middle of its trigger's box, where Enter opens a lobby; its height the road point's) */
+        uint32_t tr = g_spot.s[bi].trig; const float *b = g_spot.s[bi].box;
+        gx = 0.5f * (b[0] + b[2]); gy = 0.5f * (b[1] + b[3]); gz = (float)(int32_t)MR32(tr + 0x3cu);
+        to = g_spot.s[bi].kind == MPS_OPEN ? "the nearest race start" : "the nearest multiplayer race start";
+    }
     if (!(gx > -30000.f && gx < 30000.f && gy > -30000.f && gy < 30000.f && gz > -2000.f && gz < 2000.f)){
         rlog("[roam] f=%ld fast travel: the GPS's destination %.1f %.1f %.1f is not a place: not done\n", rh_frame(), (double)gx, (double)gy, (double)gz);
         return;
@@ -6556,10 +6574,10 @@ void roam_game_travel_key(void){
     MR16(G_HOTPOS_ANGLE) = MR16(car + 0x40cu);
     MR8(G_HOTPOS_VALID) = 1; MR8(G_HOTPOS_JUMP) = 1;
     ghost_all(); g_teleports++;
-    snprintf(t, sizeof t, "Fast travel: %.1f km to the GPS's destination", (double)(d / 1000.f));
+    snprintf(t, sizeof t, "Fast travel: %.1f km to %s", (double)(d / 1000.f), to);
     roam_game_note(t, 4000);
-    rlog("[roam] f=%ld fast travel: from %.0f %.0f %.0f to the GPS's destination %.0f %.0f %.0f (%.0f m)\n", rh_frame(),
-         (double)MRF32(car + 0x60u), (double)MRF32(car + 0x64u), (double)MRF32(car + 0x68u), (double)gx, (double)gy, (double)gz, (double)d);
+    rlog("[roam] f=%ld fast travel: from %.0f %.0f %.0f to %s %.0f %.0f %.0f (%.0f m)\n", rh_frame(),
+         (double)MRF32(car + 0x60u), (double)MRF32(car + 0x64u), (double)MRF32(car + 0x68u), to, (double)gx, (double)gy, (double)gz, (double)d);
 }
 #endif
 #ifdef ROAM_HOST_WIN
