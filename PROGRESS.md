@@ -336,9 +336,10 @@ The free-roam drop-outs seen at about 950 m (both sides' send rate falling, then
 the distance-based send rate and the hub's range, not a fault; a little hysteresis at the edge would stop the flapping.
 
 **Plan: friends over the internet (2026-11-07; the player's server on the desktop).** Under way: Tailscale is in on
-the desktop (100.76.38.37); the server runs with `NFSU2_HOST=192.168.0.109,100.76.38.37` (banner: names localhost,
+the desktop (100.76.38.37, tailscale-setup.ps1 run: the port proxy and firewall rule in; switch_probe over it 7/7);
+the desktop and the laptop in Room and Crew "RishiCrew" with the friends' pack; the server runs with `NFSU2_HOST=192.168.0.109,100.76.38.37` (banner: names localhost,
 192.168.0.109, 100.76.38.37; started `nohup setsid bash win/online/wsl-server.sh run`, its output in WSL
-`~/nfsu2-server.log`); win/online/tailscale-setup.ps1 (the port proxy and firewall rule) to run as administrator; the
+`~/nfsu2-server.log`); the
 friends' pack in C:\dev\friends-pack (not in the repo: it has the player's mods).
 - The way in: a VPN, not the router (a forwarded port would put the plain-ws server on the open internet, with no
   encryption). Tailscale: the desktop and each friend install it; the desktop's machine is shared with each friend's
