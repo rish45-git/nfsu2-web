@@ -195,6 +195,12 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **The race bot's blocker, found 02:53** (the 259a2dcd diagnostic, a sprint the laptop hosted): both PCs, every 10 s,
+    "race state 4, driver 1, throttle 0 brake 0 steer 0, dialog 00000008/9". [0x838974] stays 8 or 9 through a LAN
+    race with no dialog up, so the bot's check failed and its idle time reset each frame. Fixed in 07b5d0d2 (build
+    2c859a50…, not installed yet): the race's bot ignores it (the pause menu stops the race anyway, state 6). Also seen:
+    the game holds the brake at 1.00 during the countdown (state 3), and a second quit-notice race passed (the laptop
+    won 4.3 s after the desktop's quit; $925 -> $1325 with the top-up; saved at once).
   - **The race bot never took over in the 02:40 drag race** (both PCs; their free-roam bots did): the diagnostic line
     (commit 8aa678c7, not installed yet) says why. Also: the joiner's way back took 34 s, six "Connecting to
     lobby..." waits after the host had left the LAN game; a faster way out is to do.
