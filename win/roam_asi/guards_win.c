@@ -106,6 +106,7 @@ static void addon_race_install(void){
 /* roam_asi.c, at the start (with the plugin on) */
 static void traffic_install(void);
 static void carpool_install(void);
+static void devguard_install(void);
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
     uint8_t *site = (uint8_t *)(uintptr_t)SND_SITE;
@@ -115,6 +116,7 @@ void guards_win_install(void){
     traffic_install();
     addon_race_install();
     carpool_install();
+    devguard_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
         return;
@@ -297,6 +299,98 @@ static void carpool_install(void){
     FlushInstructionCache(GetCurrentProcess(), sa, 5);
     roam_log("[guard] the Cars pool's extra memory (0x%08x, 0x%08x): friends' rides go first, and it is given back only once "
              "it is one free block (else it stays, and the next track adds none)\n", GIVEBACK_SITE, GROW_SITE);
+}
+
+/* ---- the start without a Direct3D device (fix phase 9's third part: the 0x1D2780 crash) --------------------------
+ * The game's start (0x5D2740) fills the present parameters (0x5B9A60: 0x86F870, +0 width, +4 height, +0x20 windowed)
+ * and makes the device (0x5B9B70: CreateDevice into [0x870974], hardware then software vertex processing, once more
+ * without anti-aliasing), then uses it unchecked at 0x5D2780 (mov ecx,[eax] with [0x870974] = 0): the laptop, with
+ * its screen asleep, died there at 07:27, 07:28 and ~08:50 on 2026-11-07 (ReShade's log: CreateDevice
+ * D3DERR_INVALIDCALL for a 2560x1440 back buffer with the display at 1920x1200: the monitor gone to sleep had
+ * left the desktop on the panel).  A retry after the failure was tried (phase 6) and dropped: the second device
+ * came, and the thread then trapped in floating point.  So, before the first CreateDevice, the start waits (up to
+ * DEVWAIT_S, a second at a time, a line in the log) while the display is smaller than the back buffer or there is
+ * none (EnumDisplaySettings: the monitor asleep); and should the device still be missing at 0x5D277B, the game
+ * says so in a message box and ends (ExitProcess) instead of crashing.  user32's functions are looked up at run
+ * time, as roam_keys.c does (no new imports).  NFSU2_ROAM_TEST_DEVWAIT=1: the display counts as too small for
+ * 5 s; NFSU2_ROAM_TEST_DEVFAIL=1: the device counts as missing (test aids, the environment only). */
+#define DEV_WAIT_SITE 0x005b9b70u   /* mov edx,[0x870990]; mov eax,[0x870970] */
+#define DEV_USE_SITE  0x005d277bu   /* mov eax,[0x870974]; mov ecx,[eax] */
+#define DEVWAIT_S     120
+typedef BOOL (__stdcall *EnumDisplaySettingsA_t)(const char *, DWORD, DEVMODEA *);
+typedef int  (__stdcall *MessageBoxA_t)(HWND, const char *, const char *, UINT);
+typedef void (__stdcall *ExitProcess_t)(UINT);
+static void __attribute__((cdecl, used)) dev_wait(void){
+    static int done;
+    if (done) return;
+    done = 1;
+    HMODULE u = GetModuleHandleA("user32.dll");
+    EnumDisplaySettingsA_t eds = u ? (EnumDisplaySettingsA_t)(void *)GetProcAddress(u, "EnumDisplaySettingsA") : 0;
+    if (!eds) return;
+    const char *t = roam_opt("NFSU2_ROAM_TEST_DEVWAIT");
+    int test = t && t[0] == '1';
+    uint32_t w = MR32(0x0086f870u), h = MR32(0x0086f874u);
+    int waited = 0; DWORD dw = 0, dh = 0;
+    for (;;){
+        DEVMODEA dm; memset(&dm, 0, sizeof dm); dm.dmSize = sizeof dm;
+        int have = eds(0, (DWORD)-1 /* ENUM_CURRENT_SETTINGS */, &dm) != 0;
+        dw = have ? dm.dmPelsWidth : 0; dh = have ? dm.dmPelsHeight : 0;
+        int fits = have && dw >= w && dh >= h && !(test && waited < 5);
+        if (fits || waited >= DEVWAIT_S) break;
+        if (!waited) roam_log("[guard] the game's start asks for a %ux%u back buffer and the display is %lux%lu%s: waiting up to %d s for "
+                              "it (the screen asleep?)\n", w, h, dw, dh, have ? "" : " (none)", DEVWAIT_S);
+        Sleep(1000); waited++;
+    }
+    if (waited) roam_log("[guard] the display is %lux%lu after %d s: the start goes on\n", dw, dh, waited);
+}
+static void __attribute__((cdecl, used)) dev_check(void){
+    const char *t = roam_opt("NFSU2_ROAM_TEST_DEVFAIL");
+    if (MR32(0x00870974u) && !(t && t[0] == '1')) return;
+    roam_log("[guard] the game could not create its Direct3D device (the screen asleep, or its resolution larger than the "
+             "display?): it would crash at 0x5D2780; a message and the exit instead\n");
+    HMODULE u = GetModuleHandleA("user32.dll"), k = GetModuleHandleA("kernel32.dll");
+    MessageBoxA_t mb = u ? (MessageBoxA_t)(void *)GetProcAddress(u, "MessageBoxA") : 0;
+    ExitProcess_t ex = k ? (ExitProcess_t)(void *)GetProcAddress(k, "ExitProcess") : 0;
+    if (mb) mb(0, "The game could not create its Direct3D device: is the screen asleep, or the game's resolution larger "
+                  "than the display?\nWake the screen (or lower the resolution) and start the game again.\n\n"
+                  "(NFSU2FreeRoam.asi: without this message the game would crash here.)",
+               "NFS Underground 2", 0x00010010u /* MB_OK | MB_ICONERROR | MB_SETFOREGROUND */);
+    if (ex) ex(3);
+}
+static void devguard_install(void){
+    static const uint8_t want_w[11] = { 0x8b, 0x15, 0x90, 0x09, 0x87, 0x00, 0xa1, 0x70, 0x09, 0x87, 0x00 };
+    static const uint8_t want_u[7] = { 0xa1, 0x74, 0x09, 0x87, 0x00, 0x8b, 0x08 };
+    uint8_t *sw = (uint8_t *)(uintptr_t)DEV_WAIT_SITE, *su = (uint8_t *)(uintptr_t)DEV_USE_SITE;
+    DWORD old;
+    if (!ok(DEV_WAIT_SITE, sizeof want_w) || memcmp(sw, want_w, sizeof want_w) || !ok(DEV_USE_SITE, sizeof want_u) || memcmp(su, want_u, sizeof want_u)){
+        roam_log("[guard] the device start (0x%08x, 0x%08x) is not the game's (another mod?): a start without a display still crashes\n",
+                 DEV_WAIT_SITE, DEV_USE_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint8_t *t = g_page + 640, *q = t;                             /* before the first CreateDevice */
+    *q++ = 0x60;                                                   /* pushad */
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)dev_wait); q += 4;
+    *q++ = 0x61;                                                   /* popad */
+    memcpy(q, want_w, 6); q += 6;                                  /* mov edx,[0x870990] */
+    *q++ = 0xe9; put_rel(q, DEV_WAIT_SITE + 6u); q += 4;
+    uint8_t *v = g_page + 704; q = v;                              /* the device's first use */
+    *q++ = 0x60;
+    *q++ = 0xe8; put_rel(q, (uint32_t)(uintptr_t)dev_check); q += 4;
+    *q++ = 0x61;
+    memcpy(q, want_u, 5); q += 5;                                  /* mov eax,[0x870974] */
+    *q++ = 0xe9; put_rel(q, DEV_USE_SITE + 5u); q += 4;
+    FlushInstructionCache(GetCurrentProcess(), g_page, sizeof g_page);
+    if (!VirtualProtect(sw, 6, PAGE_EXECUTE_READWRITE, &old)) return;
+    sw[0] = 0xe9; put_rel(sw + 1, (uint32_t)(uintptr_t)t); sw[5] = 0x90;
+    VirtualProtect(sw, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), sw, 6);
+    if (!VirtualProtect(su, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    su[0] = 0xe9; put_rel(su + 1, (uint32_t)(uintptr_t)v);
+    VirtualProtect(su, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), su, 5);
+    roam_log("[guard] the device start: the game waits for a display big enough (0x%08x), and says so instead of crashing "
+             "with no device (0x%08x)\n", DEV_WAIT_SITE, DEV_USE_SITE);
 }
 
 void guards_win_frame(void){
