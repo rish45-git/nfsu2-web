@@ -200,7 +200,7 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
-  - **Overnight, 2026-11-07 05:20-06:35** (build bbd6039f..., commits up to 7e352aea; on the desktop, on the USB stick and in
+  - **Overnight, 2026-11-07 05:20-06:45** (build fe60dceb..., commits up to 33f27181; on the desktop, on the USB stick and in
     C:\dev\laptop-update; the laptop runs 42fdf870 with AiRacers = 0 until the stick reaches it):
     - **AI racers, fixed and tried in a two-PC race (06:24):** the AI finish (FinishRacer's network report 0x602000 now
       succeeds for car ids 100+, the plugin finishes them at their laps); the results in the race's order (0x4D7240
@@ -221,6 +221,8 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       AllowMultipleInstances = 1): 5-6 copies ran on both PCs, each a "Rishi" on the server (phantom tags and invites).
       Start the game once with Start-Process and focus it by clicking. The laptop has a second session ("Laptop remote
       access setup") with computer use that drives its game on the desktop session's messages.
+    - **The free-roam AFK bot stays off on a race start** (mp_spot_here), and **opening or joining a lobby in an add-on car**
+      (type 46+) says on the lobby's line for 8 s that the others may see only its spoiler (both tried on the desktop).
     - A one-player LAN race can't be had (the game: "The game failed to start"), so AI races need two PCs.
     - Open: the cutscene the player missed in a solo career race (05:00 on the laptop, build 46ea8b3f): which one is
       not known; the plugin's Solo path calls the card's Accept (0x499B50) as the card's own handler does.
