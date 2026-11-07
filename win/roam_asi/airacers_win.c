@@ -280,20 +280,34 @@ static void rise_undo(void){
             mprace_balance_touch(b->car);
         }
     }
-    if (g_rise_n) roam_log("[ai] rising: the race is over, the AI racers' sets taken off\n");
+    if (g_rise_n) roam_log("[ai] rising: the race is over (everyone finished; state %u, flow %u), the AI racers' sets taken off\n",
+                           ok(g_rise_race, 4) ? MR32(g_rise_race) : 0u, MR32(G_FLOW));
     g_rise_n = 0; g_rise_race = 0;
 }
 static void rise_frame(void){
     uint32_t race = ok(G_RACE, 4) ? MR32(G_RACE) : 0;
     int racing = MR32(G_GAMEMODE) == 0x200u && MR32(G_FLOW) == 6u && race && ok(race, 0xbf0) && MR32(race) == 4u;
     if (!racing){
-        if (g_rise_race && MR32(G_FLOW) == 6u && race == g_rise_race) rise_undo();      /* (over, the world still up) */
-        else if (g_rise_race){ g_rise_n = 0; g_rise_race = 0; }                        /* (the world gone: its cars too) */
+        /* over: the sets off while the race object is still the one the sets were given in (its cars are still there
+         * then, whatever the flow says; race 3 of 2026-11-07 17:12 never logged the undo: the flow was not 6 at that
+         * frame, so the else branch cleared the sets silently) */
+        if (g_rise_race && race == g_rise_race) rise_undo();
+        else if (g_rise_race){
+            if (g_rise_n) roam_log("[ai] rising: the race object is gone (flow %u, mode 0x%x, race %08x, was %08x): the sets went with its cars\n",
+                                   MR32(G_FLOW), MR32(G_GAMEMODE), race, g_rise_race);
+            g_rise_n = 0; g_rise_race = 0;
+        }
         return;
     }
     if (race != g_rise_race){ g_rise_race = race; g_rise_n = 0; g_lead_hist_i = 0; g_lead_sample_at = 0; for (int i = 0; i < 8; i++) g_lead_hist_at[i] = 0; }
     uint32_t n = MR32(race + 0x24u);
     if (n > 8u) return;
+    /* the finish: the race's state stays 4 through the results and the race object goes with the world (race 4 of
+     * 2026-11-07, 17:26: "the race object is gone (flow 1)"), so the sets come off when every racer is done */
+    {   uint32_t done = 0, have = 0;
+        for (uint32_t i = 0; i < n; i++){ uint32_t r = MR32(race + 0xbd0u + 4u * i); if (ok(r, 0x18)){ have++; done += MR16(r + RS_DONE) != 0; } }
+        if (have && done == have && g_rise_n){ rise_undo(); return; }
+    }
     float lead_h = -1.f, lead_all = -1.f; int lead_is_ai = 0;
     for (uint32_t i = 0; i < n; i++){
         uint32_t r = MR32(race + 0xbd0u + 4u * i), car = ok(r, 0x18) ? MR32(r) : 0;
