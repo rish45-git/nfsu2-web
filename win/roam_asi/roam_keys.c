@@ -263,7 +263,9 @@ static void hotkeys_frame(void){
     for (int i = 0; i < g_nhk; i++){
         int down = front && (p_gaks(g_hk[i].vk) & 0x8000);
         if (fresh){ if (down) roam_log("[keys] %s: its key was down as the game came in front: not a press\n", g_hk[i].what); g_hk[i].held = down; continue; }
-        if (down && !g_hk[i].held){ roam_log("[keys] %s\n", g_hk[i].what); g_hk[i].fn(); }
+        /* (a hotkey is the player at the keys too: the game's keyboard, action-mapped, never reports F7, F9 or J, so with
+         * the AFK bot driving they jumped the car and left the bot on, 2026-11-07 08:10) */
+        if (down && !g_hk[i].held){ roam_log("[keys] %s\n", g_hk[i].what); g_player_at = GetTickCount(); g_hk[i].fn(); }
         g_hk[i].held = down;
     }
     bg_cap(front);
