@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `78134ee9` (e151c1e5). The desktop runs `78134ee9` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `57940571` (bf499b4f). The desktop runs `57940571` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -77,8 +77,14 @@ reads this file first:**
    (6038e3ff/bba7aad4) cured the stall too. The laptop keeps `AiRacers = 2`. Seen: Rishi's preset Supra races as
    class 0, rating 585.1, 516 hp (the others ~180): the balance's -25 % at most leaves it far ahead; on the laptop
    the "Rishi" tag far ahead showed no car under it at that distance (not checked closer).
-2. **Fix phase 2 (Opus): The trip stalls in the background:** a joiner's LAN-menu steps ("the career car" -> "join the game") wait while
-   its window is behind another (the laptop, 57 s, 09:49), with RunInBackground on; the host waits or gives up.
+2. **Fix phase 2 (Opus): The trip stalls in the background: DONE (11:53, desktop; the laptop gets it at the next
+   stick trip).** The cause: the game's input update 0x5CFD60 reads its devices only with the window active
+   ([0x870988], the je at 0x5CFDE4), so the trip's first taps (the LAN menu's Lobby: Left x8, Enter) were never read
+   behind another window. bf499b4f (build 57940571): mov eax,[0x870988] at 0x5CFDAB goes to a stub that ors in a flag
+   set while the trip mutes the player's keys or taps wait. Test: the laptop hosted a Street X, the desktop joined
+   with its window behind Claude's ("its devices are read anyway, for the race trip's keys"): career car -> join
+   the game 5.6 s (was 57 s), the race on 16 s after the countdown. Seen: the AI cars now match the first racer's
+   tuning (with Rishi's Supra: a 240SX rated 582.7 and an RSX 543.1, both 470+ hp); Street X has no balance.
 3. **Fix phase 3 (Opus): The save question on the way back:** after a race the laptop flashed "Do you want to overwrite previously saved
    game?" (09:30:08-11, three "the save: mode 0x4000151 / 0x151 ..., top GarageMain.fng" lines) and the plugin got
    past it; unknown whether it answered Yes or No, so a race's prize may not reach the save.
