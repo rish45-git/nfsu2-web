@@ -200,6 +200,15 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **The player's 13-item list, round 1 built** (commit b178f110, build 43ca1fc2…, installed on the desktop 03:40 and on
+    the USB stick for the laptop; not tried in the game):
+    - the faster way back (item 6): repeated call-offs after half a second;
+    - restored wins pay the top-up (item 9): its sixth field in NFSU2FreeRoam.wins;
+    - crew-mates stay 30 s past the hub's list (item 13, conf.crew_grace_us);
+    - controller and mouse events count for the AFK bot.
+
+    Next, round 2: the race bot keeping the race's route (item 1), the AI's skill (item 2), the crash after the movie
+    (item 8). Then round 3: items 3, 4, 5, 7, 10, 11, 12.
   - **Catch-up off and sponsors work** (03:18-03:24, build 46ea8b3f on both PCs, S2_CIRCUIT_4, the desktop hosting):
     the race came with Catch Up 1 and the plugin set it to 0 at the start. Both race bots took over (the laptop's
     twice); the desktop's raced the last 5 minutes and **won** (place 1, it counts). The player: "better than before".
