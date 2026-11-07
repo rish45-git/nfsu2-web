@@ -224,6 +224,11 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     - **The free-roam AFK bot stays off on a race start** (mp_spot_here), and **opening or joining a lobby in an add-on car**
       (type 46+) says on the lobby's line for 8 s that the others may see only its spoiler (both tried on the desktop).
     - A one-player LAN race can't be had (the game: "The game failed to start"), so AI races need two PCs.
+    - **The race bot's route watchdog worked** (item 1, the laptop at 06:49:03): "going the wrong way for 4 s ... the car
+      back onto the route", the AI on again 1.5 s later, then 2nd to the line.
+    - **The game stops when its window is not in front:** the laptop's frame counter went f=77228 -> 77229 in 3.5 minutes
+      while the Claude window had focus, and it sent nothing ("Rishi seems away" call-offs, invites not seen). The game's
+      own pause on focus loss; with a player at the keys the window is in front. A later fix: keep it running.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;
