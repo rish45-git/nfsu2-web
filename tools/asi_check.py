@@ -4,7 +4,8 @@
   tools/asi_check.py out/win/NFSU2FreeRoam.asi [SPEED2.EXE]
 
   1. PE: 32-bit x86 DLL, GUI subsystem, DYNAMIC_BASE + NX_COMPAT, relocations,
-     no TLS, no section both writable and executable, under 512 KB (384 before the race trips from free roam, runtime/mprace.c).
+     no TLS, no section both writable and executable, under 640 KB (384 before the race trips from free roam, runtime/mprace.c; 512 before the show-off, the
+     sponsors and the kept wins, 2026-11-07: 525 KB then).
   2. Exports exactly InitializeASI; the entry point is DllMain.
   3. Imports only KERNEL32, WS2_32 and WINHTTP, and only the functions listed here
      (no C runtime, no libgcc/winpthread DLL, nothing a friend's PC lacks:
@@ -44,7 +45,10 @@ ALLOWED = {
         # its diagnostics: which threads call the game's Winsock, at what priority
         'GetCurrentThread', 'GetThreadPriority',
         # the plugin's hotkeys (win/roam_asi/roam_keys.c): user32's key functions, looked up at run time
-        'GetProcAddress'},
+        'GetProcAddress',
+        # multiplayer wins that wait for the next garage visit, kept beside the .ini across a restart (mprace_win.c), and
+        # the profile's save file's time (whether the game has written a given win into it yet)
+        'ReadFile', 'GetFileAttributesExA', 'GetSystemTimeAsFileTime'},
     # online play: the WebSocket to the server's switch (Windows 8 or newer; only used with Server = in the .ini)
     'WINHTTP.dll': {
         'WinHttpCloseHandle', 'WinHttpConnect', 'WinHttpOpen', 'WinHttpOpenRequest', 'WinHttpQueryHeaders',
@@ -83,7 +87,7 @@ def main():
     check(tls.VirtualAddress == 0 and tls.Size == 0, 'no TLS directory (nothing runs before DllMain)')
     wx = [s.Name.rstrip(b'\0').decode() for s in pe.sections if s.Characteristics & 0x80000000 and s.Characteristics & 0x20000000]
     check(not wx, 'no section both writable and executable%s' % (' (' + ', '.join(wx) + ')' if wx else ''))
-    check(len(data) < 512 * 1024, 'under 512 KB')
+    check(len(data) < 640 * 1024, 'under 640 KB')
     check(pe.FILE_HEADER.TimeDateStamp == 0, 'no time stamp (reproducible build)')
     dbg = os.path.join(os.path.dirname(asi), 'dbg', os.path.basename(asi))
     if os.path.exists(dbg) and dbg != asi:

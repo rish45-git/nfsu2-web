@@ -396,6 +396,70 @@ void roam_win_dump_car(const uint8_t *b, int n){
     DWORD w; WriteFile(h, b, (DWORD)n, &w, 0); CloseHandle(h);
     roam_log("[roam] the car's record (%d bytes) saved to %s\n", n, path);
 }
+/* ---- files beside the .ini, and the profile's save (mprace_win.c's waiting wins) ---------------------------------- */
+static int side_path(const char *ext, char *path, int cap){
+    int k = lstrlenA(g_ini), e = lstrlenA(ext);
+    if (k < 5 || k - 3 + e >= cap) return 0;
+    for (int i = 0; i < k - 3; i++) path[i] = g_ini[i];                 /* (".ini" -> "." + ext) */
+    for (int i = 0; i <= e; i++) path[k - 3 + i] = ext[i];
+    return 1;
+}
+/* <the .ini's name>.<ext>: its bytes (cut to cap - 1, 0-terminated), -1 none */
+int roam_win_file_read(const char *ext, char *buf, int cap){
+    char path[MAX_PATH + 16];
+    if (cap < 1 || !side_path(ext, path, sizeof path)) return -1;
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    DWORD got = 0; int r = ReadFile(h, buf, (DWORD)(cap - 1), &got, 0) ? (int)got : -1;
+    CloseHandle(h);
+    buf[r > 0 ? r : 0] = 0;
+    return r;
+}
+/* ...written whole (n bytes; 0: an empty file): 1 done */
+int roam_win_file_write(const char *ext, const char *buf, int n){
+    char path[MAX_PATH + 16];
+    if (!side_path(ext, path, sizeof path)) return 0;
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    DWORD w = 0; int ok = n <= 0 || (WriteFile(h, buf, (DWORD)n, &w, 0) && (int)w == n);
+    CloseHandle(h);
+    return ok;
+}
+/* the time now and a file's last write, as FILETIMEs (100 ns since 1601) */
+uint64_t roam_win_filetime_now(void){ FILETIME t; GetSystemTimeAsFileTime(&t); return (uint64_t)t.dwHighDateTime << 32 | t.dwLowDateTime; }
+static uint64_t mtime_of(const char *path){
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &a)) return 0;
+    return (uint64_t)a.ftLastWriteTime.dwHighDateTime << 32 | a.ftLastWriteTime.dwLowDateTime;
+}
+/* the last write of profile name's save, "NFS Underground 2\<name>\<name>": under the game's folder's SAVEGAMES (this
+ * install's, a mod's choice), else the user's Documents (the game's own); 0 none found.  where: the path found */
+uint64_t roam_win_save_mtime(const char *name, char *where, int cap){
+    char p[MAX_PATH + 96], base[MAX_PATH];
+    if (!name || !name[0] || lstrlenA(name) > 32) return 0;
+    for (int pass = 0; pass < 2; pass++){
+        base[0] = 0;
+        if (pass == 0){
+            DWORD n = GetModuleFileNameA(0, base, MAX_PATH);
+            if (!n || n >= MAX_PATH) continue;
+            int sl = -1; for (int i = 0; base[i]; i++) if (base[i] == '\\' || base[i] == '/') sl = i;
+            if (sl < 0) continue;
+            base[sl] = 0;
+            if (lstrlenA(base) + 12 >= MAX_PATH) continue;
+            lstrcpyA(base + lstrlenA(base), "\\SAVEGAMES");
+        } else {
+            DWORD n = GetEnvironmentVariableA("USERPROFILE", base, MAX_PATH);
+            if (!n || n + 12 >= MAX_PATH) continue;
+            lstrcpyA(base + n, "\\Documents");
+        }
+        if (lstrlenA(base) + 2 * lstrlenA(name) + 24 >= (int)sizeof p) continue;
+        lstrcpyA(p, base); lstrcpyA(p + lstrlenA(p), "\\NFS Underground 2\\"); lstrcpyA(p + lstrlenA(p), name);
+        lstrcpyA(p + lstrlenA(p), "\\"); lstrcpyA(p + lstrlenA(p), name);
+        uint64_t t = mtime_of(p);
+        if (t){ if (where && cap > 0){ int k = 0; for (; p[k] && k + 1 < cap; k++) where[k] = p[k]; where[k] = 0; } return t; }
+    }
+    return 0;
+}
 uint64_t roam_win_ns(void){
     static LARGE_INTEGER f; LARGE_INTEGER c;
     if (!f.QuadPart && (!QueryPerformanceFrequency(&f) || !f.QuadPart)) f.QuadPart = 1000;

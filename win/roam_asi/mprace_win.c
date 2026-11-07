@@ -471,29 +471,148 @@ static int win_now(uint32_t r, float margin){
              st0, wins0, stage_wins(cur), st0, st1, g_last.offers, g_last.movie[0] ? "; the movie " : "", g_last.movie);
     return event_won(h);
 }
-#define PEND_MAX 16
-static struct { uint32_t race[PEND_MAX]; float margin[PEND_MAX]; int n; long since; } g_pend;
+/* ---- wins kept across a restart (runtime/mpcredit.c's MPWINS.DAT, the plugin's way) --------------------------------
+ * <the .ini's name>.wins, one line per win: W (waits for the next crib) or G (given in a crib, not known to be in the
+ * profile's save yet), the profile's name, the race's hash, the margin's bits, and for G when it was given (a FILETIME),
+ * tab-separated.  A win in free roam (the trip missed the crib) is W; a win given in the crib (the trip's, or a W one) is
+ * G.  Once a second (in the career, out of a trip): a G whose race the live career has won and whose profile's save on
+ * disk is newer than its giving is in the save: gone from the file; a G whose race the live career has not won (the
+ * profile loaded again from a save without it: the game closed, or no save made since) waits again, W.  The W ones of
+ * the profile in play are given in the crib, one at a time (after its snapshot of the profile).  So a win is lost only
+ * if the file cannot be written.  The save is found under the game folder's SAVEGAMES, else Documents
+ * (roam_win_save_mtime); with neither found a G stays until its race shows won after a load. */
+int      roam_win_file_read(const char *ext, char *buf, int cap);
+int      roam_win_file_write(const char *ext, const char *buf, int n);
+uint64_t roam_win_filetime_now(void);
+uint64_t roam_win_save_mtime(const char *name, char *where, int cap);
+#define PEND_MAX        32
+#define G_P1_NAME       0x0083a9e0u   /* player 1's profile (FEDatabase +0x10): its name, 32 bytes, first */
+typedef struct { char prof[33]; uint32_t hash; float margin; uint8_t given; uint64_t at; } Pend;
+static struct { Pend e[PEND_MAX]; int n, loaded; long since, check_at; } g_pend;
+static void live_profile(char out[33]){
+    unsigned i = 0;
+    for (; i < 32u; i++){ uint8_t ch = rd(G_P1_NAME + (i & ~3u)) >> (8u * (i & 3u)) & 0xffu; if (ch < 0x20u || ch == 0x7fu || ch == '\t') break; out[i] = (char)ch; }
+    out[i] = 0;
+}
+static uint32_t race_by_hash(uint32_t h){
+    uint32_t t = rd(G_RACES), n = rd(G_NRACES);
+    for (uint32_t i = 0; t && i < n && i < 1024; i++) if (rd(t + i * RACE_SZ + 8u) == h) return t + i * RACE_SZ;
+    return 0;
+}
+static uint32_t hexu(const char **p){
+    uint32_t v = 0; const char *s = *p;
+    for (;; s++){ char c = *s; int d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; if (d < 0) break; v = v << 4 | (uint32_t)d; }
+    *p = s; return v;
+}
+static void pend_write(void){
+    char b[PEND_MAX * 96 + 8]; int n = 0;
+    for (int i = 0; i < g_pend.n; i++){
+        const Pend *e = &g_pend.e[i];
+        n += snprintf(b + n, sizeof b - (size_t)n, "%c\t%s\t%08x\t%08x\t%08x%08x\n", e->given ? 'G' : 'W', e->prof, e->hash, fbits(e->margin),
+                      (uint32_t)(e->at >> 32), (uint32_t)e->at);
+        if (n >= (int)sizeof b - 1) break;
+    }
+    if (!roam_win_file_write("wins", b, n)) roam_log("[mpcredit] the waiting wins' file could not be written: they are in memory only\n");
+}
+static void pend_load(void){
+    g_pend.loaded = 1;
+    char b[PEND_MAX * 96 + 8];
+    int k = roam_win_file_read("wins", b, sizeof b);
+    if (k <= 0) return;
+    for (const char *s = b; *s && g_pend.n < PEND_MAX; ){
+        const char *eol = s; while (*eol && *eol != '\n') eol++;
+        Pend e; memset(&e, 0, sizeof e);
+        if ((s[0] == 'W' || s[0] == 'G') && s[1] == '\t'){
+            e.given = s[0] == 'G';
+            const char *p = s + 2; int j = 0;
+            while (p < eol && *p != '\t' && j < 32) e.prof[j++] = *p++;
+            e.prof[j] = 0;
+            if (p < eol && *p == '\t'){ p++; e.hash = hexu(&p); }
+            if (p < eol && *p == '\t'){ p++; uint32_t m = hexu(&p); memcpy(&e.margin, &m, 4); }
+            if (p < eol && *p == '\t'){ p++; const char *q = p; uint32_t hi = 0, lo = 0;
+                for (int d = 0; d < 8 && q < eol; d++) { char t[2] = { *q++, 0 }; const char *tp = t; hi = hi << 4 | hexu(&tp); }
+                for (int d = 0; d < 8 && q < eol; d++) { char t[2] = { *q++, 0 }; const char *tp = t; lo = lo << 4 | hexu(&tp); }
+                e.at = (uint64_t)hi << 32 | lo; }
+            if (e.prof[0] && e.hash) g_pend.e[g_pend.n++] = e;
+        }
+        s = *eol ? eol + 1 : eol;
+    }
+    int w = 0, g = 0; for (int i = 0; i < g_pend.n; i++) { if (g_pend.e[i].given) g++; else w++; }
+    roam_log("[mpcredit] %s.wins: %d win(s) wait for a crib, %d given but not known to be saved yet\n", "NFSU2FreeRoam", w, g);
+}
+static int pend_find(const char *prof, uint32_t h){ for (int i = 0; i < g_pend.n; i++) if (g_pend.e[i].hash == h && !strcasecmp(g_pend.e[i].prof, prof)) return i; return -1; }
+static void pend_drop(int i){ for (int k = i + 1; k < g_pend.n; k++) g_pend.e[k - 1] = g_pend.e[k]; g_pend.n--; }
+/* a win given in the crib now (G, from now) */
+static void pend_given(uint32_t race, float margin){
+    char pn[33]; live_profile(pn);
+    if (!pn[0]) return;
+    uint32_t h = MR32(race + 8u);
+    int i = pend_find(pn, h);
+    if (i < 0){ if (g_pend.n >= PEND_MAX) return; i = g_pend.n++; memset(&g_pend.e[i], 0, sizeof g_pend.e[i]); lstrcpyA(g_pend.e[i].prof, pn); g_pend.e[i].hash = h; }
+    g_pend.e[i].margin = margin; g_pend.e[i].given = 1; g_pend.e[i].at = roam_win_filetime_now();
+    pend_write();
+}
 int mpcredit_win(struct CPU *c, uint32_t race, float margin, int in_roam){
     (void)c;
+    if (!g_pend.loaded) pend_load();
     if (!race_in_table(race)){ roam_log("[mpcredit] f=%ld race 0x%08x is not in the race table: left\n", roam_win_frame_no(), race); return 0; }
     if (event_won(MR32(race + 8u))){ roam_log("[mpcredit] f=%ld %s is won already: left\n", roam_win_frame_no(), race_name(race)); return 0; }
     if (rd(G_GAMEMODE) != 1u){ roam_log("[mpcredit] f=%ld %s: not in the career (mode 0x%x): left\n", roam_win_frame_no(), race_name(race), rd(G_GAMEMODE)); return 0; }
     if (in_roam){
-        for (int i = 0; i < g_pend.n; i++) if (g_pend.race[i] == race) return 1;
+        char pn[33]; live_profile(pn);
+        uint32_t h = MR32(race + 8u);
+        if (!pn[0]){ roam_log("[mpcredit] f=%ld %s: no profile name: the win is not kept\n", roam_win_frame_no(), race_name(race)); return 0; }
+        if (pend_find(pn, h) >= 0) return 1;
         if (g_pend.n >= PEND_MAX) return 0;
-        g_pend.race[g_pend.n] = race; g_pend.margin[g_pend.n++] = margin;
-        roam_log("[mpcredit] f=%ld %s: in free roam, the win waits for the next crib (until the game ends)\n", roam_win_frame_no(), race_name(race));
+        Pend *e = &g_pend.e[g_pend.n++]; memset(e, 0, sizeof *e);
+        lstrcpyA(e->prof, pn); e->hash = h; e->margin = margin;
+        pend_write();
+        roam_log("[mpcredit] f=%ld %s: in free roam, the win waits for the next crib (kept in NFSU2FreeRoam.wins)\n", roam_win_frame_no(), race_name(race));
         return 1;
     }
-    return win_now(race, margin);
+    int ok = win_now(race, margin);
+    if (ok) pend_given(race, margin);
+    return ok;
 }
-int mpcredit_pending(void){ return g_pend.n; }
+int mpcredit_pending(void){
+    char pn[33]; live_profile(pn); int n = 0;
+    for (int i = 0; i < g_pend.n; i++) if (!g_pend.e[i].given && !strcasecmp(g_pend.e[i].prof, pn)) n++;
+    return n;
+}
 void mpcredit_profile_written(const char *path){ (void)path; }
 void mpcredit_profile_deleted(const char *path){ (void)path; }
 int mpcredit_test(const char *name, float margin){ (void)name; (void)margin; return 0; }
-/* per frame: a waiting win, in the crib, once it took its snapshot of the profile (180 frames at most) */
+/* once a second, in the career: the given ones saved or lost (above) */
+static void pend_check(long f){
+    if (f - g_pend.check_at < 60) return;
+    g_pend.check_at = f;
+    char pn[33]; live_profile(pn);
+    if (!pn[0] || rd(G_GAMEMODE) != 1u || !rd(G_RACES)) return;
+    char where[300] = "";
+    uint64_t saved = 0; int looked = 0, changed = 0;
+    for (int i = 0; i < g_pend.n; i++){
+        Pend *e = &g_pend.e[i];
+        if (!e->given || strcasecmp(e->prof, pn)) continue;
+        uint32_t r = race_by_hash(e->hash);
+        if (!r){ roam_log("[mpcredit] f=%ld a kept win: its race is not in the race table: dropped\n", f); pend_drop(i--); changed = 1; continue; }
+        if (!event_won(e->hash)){
+            e->given = 0; e->at = 0; changed = 1;
+            roam_log("[mpcredit] f=%ld %s: given before, not in the career now (loaded from a save without it): waits for the crib again\n", f, race_name(r));
+            continue;
+        }
+        if (!looked){ looked = 1; saved = roam_win_save_mtime(pn, where, sizeof where); }
+        if (saved && saved > e->at){
+            roam_log("[mpcredit] f=%ld %s: in the profile's save now (%s): no longer kept\n", f, race_name(r), where);
+            pend_drop(i--); changed = 1;
+        }
+    }
+    if (changed) pend_write();
+}
+/* per frame: the sponsor question and the movie of a win; the kept wins; a waiting win in the crib, once it took its
+ * snapshot of the profile (180 frames at most) */
 void mpcredit_frame(struct CPU *c){
     (void)c;
+    if (!g_pend.loaded) pend_load();
     /* the sponsor question and the movie of a win; a question or a movie whose crib went away is dropped */
     if (g_ui.st != UI_NONE){
         int gone = rd(G_GAMEMODE) != 1u || ((g_ui.st == UI_OFFER || g_ui.st == UI_ASKED || (g_ui.st == UI_WAIT && !g_ui.leaving))
@@ -505,17 +624,25 @@ void mpcredit_frame(struct CPU *c){
         }
         if (g_ui.st != UI_WAIT){ ui_frame(); return; }
     }
-    if (!g_pend.n) return;
-    if (rd(G_GAMEMODE) != 1u || !career_fe_active("UI_CareerCrib.fng") || career_fe_active("MC_Main.fng")){ g_pend.since = 0; return; }
     long f = roam_win_frame_no();
+    if (g_pend.n) pend_check(f);
+    char pn[33]; live_profile(pn);
+    int w = -1;
+    for (int i = 0; i < g_pend.n && w < 0; i++) if (!g_pend.e[i].given && pn[0] && !strcasecmp(g_pend.e[i].prof, pn)) w = i;
+    if (w < 0) return;
+    if (rd(G_GAMEMODE) != 1u || !career_fe_active("UI_CareerCrib.fng") || career_fe_active("MC_Main.fng")){ g_pend.since = 0; return; }
     if (!g_pend.since) g_pend.since = f;
     if (!rd(G_SNAPSHOT) && f - g_pend.since < 180) return;
-    uint32_t r = g_pend.race[0]; float m = g_pend.margin[0];
-    for (int i = 1; i < g_pend.n; i++){ g_pend.race[i - 1] = g_pend.race[i]; g_pend.margin[i - 1] = g_pend.margin[i]; }
-    g_pend.n--;
-    if (!race_in_table(r) || event_won(MR32(r + 8u))){ roam_log("[mpcredit] f=%ld a waiting win: won already or gone, left\n", f); return; }
+    g_pend.since = 0;
+    Pend e = g_pend.e[w];
+    uint32_t r = race_by_hash(e.hash);
+    if (!r || event_won(e.hash)){
+        roam_log("[mpcredit] f=%ld a waiting win: won already or gone, left\n", f);
+        pend_drop(w); pend_write(); return;
+    }
     roam_log("[mpcredit] f=%ld the waiting win of %s, in the crib\n", f, race_name(r));
-    win_now(r, m);
+    if (win_now(r, e.margin)) pend_given(r, e.margin);
+    else { pend_drop(w); pend_write(); }
 }
 
 /* ---- what roam_game.c's race lobbies take from the port ---- */
