@@ -5798,8 +5798,23 @@ static void mp_to(int st, int64_t host){
     if (st != g_mp.st) rlog("[roam] f=%ld race lobby %08x: %s -> %s\n", rh_frame(), g_mp.l.id, mp_st[g_mp.st], mp_st[st]);
     if (st != g_mp.st){ g_mp.alone_at = g_mp.roam_at = 0; g_mp.input_at = host; }
     if (st != g_mp.st && g_mp.st == MP_HOST) g_mp.l.away_s = 0;      /* (the countdown's adverts: not away) */
+    int was = g_mp.st; (void)was;
     g_mp.st = st; g_mp.since = host;
     if (st == MP_IDLE){ memset(&g_mp.l, 0, sizeof g_mp.l); g_mp.host_up = 0; g_mp.host_ip = 0; g_mp.tn = 0; g_mp.srv = 0; g_mp.far = 0; g_mp.far_mask = 0; }
+#ifdef ROAM_HOST_WIN
+    /* opening or joining a lobby in an Unlimiter add-on car (type 46 and up): the other players' games draw it as its
+     * spoiler alone in the race (the laptop and the desktop's SENTRAB12, 2026-11-07), so the player is told; a car of
+     * the game's own shows whole */
+    if (was == MP_IDLE && (st == MP_HOST || st == MP_ASKED || st == MP_IN)){
+        uint32_t car = player_car(), ride = car ? rd32(car + 0x10u) : 0, type = ride ? rd32(ride) : 0, types = rd32(G_CARTYPES);
+        if (ride && type >= TYPE_STOCK && type < 128u && types){
+            char nm[24], t[TAG_DUEL_MAX];
+            cstr(types + type * 0x890u, nm, sizeof nm);
+            snprintf(t, sizeof t, "Your %s is an add-on car: in the race the others may see only its spoiler. A stock car shows whole", nm[0] ? nm : "car");
+            mp_note(host, t);
+        }
+    }
+#endif
 }
 static int mp_in(const MpLobby *l, uint32_t id){ for (int i = 0; i < l->n; i++) if (l->ids[i] == id) return 1; return 0; }
 static int mp_in_ids(const uint32_t *ids, int n, uint32_t id){ for (int i = 0; i < n && i < RC_LOBBY_MAX; i++) if (ids[i] == id) return 1; return 0; }
@@ -10264,7 +10279,9 @@ static void afk_frame(CPU *c, int64_t host, int in_roam){
         if (th > 0.05f || br > 0.05f || st > 0.1f || st < -0.1f) here = 1;
     }
     int roamok = in_roam && roaming() && rd32(G_RACEKIND_AFK) == 0u && local_status(1) == RC_ST_ROAM && g_mp.st == MP_IDLE &&
-                 !mprace_owns_input() && !rd32(G_DLG_ID);
+                 !mprace_owns_input() && !rd32(G_DLG_ID) &&
+                 !mp_spot_here();   /* (not on a race start: a player parked there to open a lobby or wait for a friend had
+                                       the bot drive the car away after 30 s, 2026-11-07 overnight) */
     /* ...and a multiplayer race from free roam (mprace.c's trip, racing: the race running, not paused or counting down,
      * no dialog), the player's ask too, 2026-11-07: there the AI races for the player (a network race makes the
      * player's car a human's only at its start, so not before the race runs) */
