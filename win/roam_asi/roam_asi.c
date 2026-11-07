@@ -154,6 +154,7 @@ static const struct { const char *name, *key, *def; } OPTS[] = {
     { "NFSU2_ROAM_BACKGROUND",  "RunInBackground", "1" }, /* 1: the game goes on with its window not in front (0: it stops, the game's own way) */
     { "NFSU2_ROAM_BGFPS",       "BackgroundFps", "30" }, /* frames a second with the window not in front (0: no cap) */
     { "NFSU2_ROAM_ADDONSTOCK",  "AddOnStockLook", "1" }, /* an add-on car of ours goes to friends with stock parts (0: its own parts) */
+    { "NFSU2_ROAM_ADDONRACE",   "AddOnStockRace", "0" }, /* 1: add-on cars go to the others in LAN races with stock parts (to try; 0: as the game) */
     { "NFSU2_ROAM_ONLINE",      "Online",     ""  },  /* with Server: the game's Online and LAN menus on its virtual LAN (default 1) */
     { "NFSU2_ROAM_COLLIDE",     "Collide",    ""  },
     { "NFSU2_ROAM_DISCOVERY",   "Discovery",  ""  },

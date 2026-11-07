@@ -261,9 +261,11 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
       **The race's side, not built:** the game's LAN car description (0x5F0320, thiscall (ride, the bit writer, with
       parts); its callers 0x5876A1 and 0x5FE5B4 always pass 1) writes 0xAA and the parts, or with the third argument
       0 a count of 0; its decoder (0x5F04D0) takes a count of 0 as stock parts (0x637040(0) on the ride, 0x5F0625).
-      So a hook at 0x5F0320 (83 EC 14 53 55, 5 bytes) that clears that byte for rides of type 46+ would send an add-on
-      stock to the race too. To build and try with the laptop (a two-PC race); a client might then show its own add-on
-      car stock in a race the other PC hosts, if it rebuilds its own car from the host's records.
+      **Built, off by default: AddOnStockRace = 1** (guards_win.c addon_race_install, build c212de5c) hooks 0x5F0320
+      (83 EC 14 53 55): a ride of type 46..255 gets its third argument cleared, so it goes with no parts; counted in
+      the log. The stub's bytes checked by disassembly; not run in a race yet. To try with the laptop: AddOnStockRace = 1
+      on the desktop, a two-PC race, does the laptop see the SENTRAB12 whole. A client might show its own add-on car
+      stock in a race the other PC hosts, if it rebuilds its own car from the host's records.
     - **Open: a crash at 0x4405CF (06:41:46)**, the game's memory pool free (0x440540: a block whose header was broken),
       2 s into a trip's "quit to the main menu", before the plugin saw the world go; the laptop's 240SX was in friend
       slot 0. New (the night's other crashes: 0x33CA78 the sound bank, guarded; 0x1E796 the traffic driver, gone;

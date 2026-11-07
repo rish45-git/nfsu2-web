@@ -57,6 +57,52 @@ static void background_install(void){
     roam_log("[guard] RunInBackground: the game goes on with its window not in front (friends keep hearing from it)\n");
 }
 
+/* ---- an add-on car in a LAN race: its description with no parts (AddOnStockRace = 1; off by default, to try) -------
+ * The game's LAN car description (0x5F0320, thiscall (ride, the bit writer, with parts), ret 0xC; its callers
+ * 0x5876A1 and 0x5FE5B4 pass 1) writes 0xAA and the ride's parts, or with the third argument 0 a count of 0, which
+ * its decoder (0x5F04D0, 0x5F0625) takes as stock parts (0x637040(0) on the ride).  The laptop drew the desktop's
+ * SENTRAB12 with its own parts as nothing (or its spoiler) in races, as in free roam (item 7; free roam's side is
+ * roam_game.c's AddOnStockLook).  With AddOnStockRace = 1 a ride of type 46 and up (an Unlimiter add-on) goes without
+ * parts: the others' games build it stock.  Every such description is counted ("[guard]") */
+#define DESC_SITE 0x005f0320u   /* sub esp,0x14; push ebx; push ebp */
+static volatile LONG g_desc_hits;
+static LONG g_desc_logged;
+static void addon_race_install(void){
+    static const uint8_t want[5] = { 0x83, 0xec, 0x14, 0x53, 0x55 };
+    uint8_t *site = (uint8_t *)(uintptr_t)DESC_SITE;
+    DWORD old;
+    const char *v = roam_opt("NFSU2_ROAM_ADDONRACE");
+    if (!v || v[0] != '1') return;
+    if (!ok(DESC_SITE, sizeof want) || memcmp(site, want, sizeof want)){
+        roam_log("[guard] the LAN car description (0x%08x) is not the game's (another mod?): AddOnStockRace off\n", DESC_SITE);
+        return;
+    }
+    if (!VirtualProtect(g_page, sizeof g_page, PAGE_EXECUTE_READWRITE, &old)) return;
+    uint8_t *t = g_page + 128, *q = t;
+    uint8_t *j1, *j2, *j3;
+    *q++ = 0x8b; *q++ = 0x44; *q++ = 0x24; *q++ = 0x04;            /* mov eax, [esp+4]: the ride */
+    *q++ = 0x85; *q++ = 0xc0;                                      /* test eax, eax */
+    *q++ = 0x74; j1 = q++;                                         /* jz orig */
+    *q++ = 0x8b; *q++ = 0x00;                                      /* mov eax, [eax]: its car type */
+    *q++ = 0x83; *q++ = 0xf8; *q++ = 0x2e;                         /* cmp eax, 46 */
+    *q++ = 0x72; j2 = q++;                                         /* jb orig */
+    *q++ = 0x3d; *q++ = 0x00; *q++ = 0x01; *q++ = 0x00; *q++ = 0x00;  /* cmp eax, 256 */
+    *q++ = 0x73; j3 = q++;                                         /* jae orig */
+    *q++ = 0xc6; *q++ = 0x44; *q++ = 0x24; *q++ = 0x0c; *q++ = 0x00;  /* mov byte [esp+0xC], 0: no parts */
+    *q++ = 0xf0; *q++ = 0xff; *q++ = 0x05;                         /* lock inc dword [g_desc_hits] */
+    { uint32_t a = (uint32_t)(uintptr_t)&g_desc_hits; memcpy(q, &a, 4); q += 4; }
+    uint8_t *orig = q;
+    *j1 = (uint8_t)(orig - (j1 + 1)); *j2 = (uint8_t)(orig - (j2 + 1)); *j3 = (uint8_t)(orig - (j3 + 1));
+    memcpy(q, want, sizeof want); q += sizeof want;                /* the 5 bytes moved */
+    *q++ = 0xe9; put_rel(q, DESC_SITE + 5u); q += 4;               /* jmp 0x5F0325 */
+    FlushInstructionCache(GetCurrentProcess(), t, (SIZE_T)(q - t));
+    if (!VirtualProtect(site, sizeof want, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9; put_rel(site + 1, (uint32_t)(uintptr_t)t);
+    VirtualProtect(site, sizeof want, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, sizeof want);
+    roam_log("[guard] AddOnStockRace: an add-on car goes to the others' games in a LAN race with stock parts\n");
+}
+
 /* roam_asi.c, at the start (with the plugin on) */
 void guards_win_install(void){
     static const uint8_t want[15] = { 0x8b, 0x4c, 0x88, 0x58, 0x0f, 0xbf, 0x41, 0x2c, 0x3b, 0xc3, 0x8d, 0x56, 0x10, 0x75, 0x34 };
@@ -64,6 +110,7 @@ void guards_win_install(void){
     DWORD old;
     if (g_on) return;
     background_install();
+    addon_race_install();
     if (!ok(SND_SITE, sizeof want) || memcmp(site, want, sizeof want)){
         roam_log("[guard] the sound banks' lookup (0x%08x) is not the game's (another mod?): not guarded\n", SND_SITE);
         return;
@@ -137,6 +184,8 @@ static void load_watch_install(void){
 }
 /* roam_asi.c, each frame: the guard's count when it grew */
 void guards_win_frame(void){
+    LONG d = g_desc_hits;
+    if (d != g_desc_logged){ g_desc_logged = d; roam_log("[guard] AddOnStockRace: an add-on car's LAN description went with stock parts (%ld so far)\n", (long)d); }
     LONG n = g_snd_hits;
     if (n == g_snd_logged) return;
     g_snd_logged = n;
