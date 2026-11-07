@@ -138,7 +138,9 @@ What follows is the record: how it was planned, built and tested, in order.
 without the door fix, sponsors or movie. Older builds are kept in `out/win/backup/` (`NFSU2FreeRoam.phase4.*`,
 `.phase6-try1.asi`, `.before-tohost.asi`, `.before-showoff.asi`).
 
-**Built after that, NOT installed anywhere** (the player is testing the installed build, 2026-11-07 01:20; install only
+**Built after that, installed on both PCs 2026-11-07 ~01:55 (d97722f2…; the old builds backed up: the laptop's in
+scriptsbackup-20261107, the desktop's as out/win/backup/NFSU2FreeRoam.before-d97722f2.*); C:devaptop-update still has
+9125e302…** (first: not installed anywhere while the player tested, 2026-11-07 01:20; installed only
 when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 955738f2, 525 KB, asi_check PASS:
 - **Partner and crew-mates count unless you quit** (the player's choice for item 5). In the plugin (mprace.c
   credit_decide, `ROAM_HOST_WIN`), a friend's win counts when we did not finish but stayed in to the end: place 0,
