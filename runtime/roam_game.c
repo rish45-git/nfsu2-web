@@ -5794,6 +5794,7 @@ static void mp_note(int64_t host, const char *t){
     g_mp.note_until = host + MP_NOTE_US;
     rlog("[roam] f=%ld race lobby: %s\n", rh_frame(), t);
 }
+static char g_addon_note[TAG_DUEL_MAX]; static int64_t g_addon_until;   /* an add-on car's note, the lobby's line shows it */
 static void mp_to(int st, int64_t host){
     if (st != g_mp.st) rlog("[roam] f=%ld race lobby %08x: %s -> %s\n", rh_frame(), g_mp.l.id, mp_st[g_mp.st], mp_st[st]);
     if (st != g_mp.st){ g_mp.alone_at = g_mp.roam_at = 0; g_mp.input_at = host; }
@@ -5812,6 +5813,7 @@ static void mp_to(int st, int64_t host){
             cstr(types + type * 0x890u, nm, sizeof nm);
             snprintf(t, sizeof t, "Your %s is an add-on car: in the race the others may see only its spoiler. A stock car shows whole", nm[0] ? nm : "car");
             mp_note(host, t);
+            snprintf(g_addon_note, sizeof g_addon_note, "%s", t); g_addon_until = host + 8000000;   /* (the lobby's line, mp_line) */
         }
     }
 #endif
@@ -6894,6 +6896,7 @@ static int g_mp_panel = -1;                   /* the platform's panel: 1 the pag
 static int mp_line(int64_t host, char *tx, int n){
     char nm[24];
     if (g_mp_panel == 1) return 0;
+    if (g_mp.st != MP_IDLE && host < g_addon_until && g_addon_note[0]){ snprintf(tx, (size_t)n, "%s", g_addon_note); return 1; }
     switch (g_mp.st){
     case MP_HOST:
         if (g_mp.l.n < 2) snprintf(tx, (size_t)n, "Multiplayer %s: waiting for players (drive away to call it off)", race_kind(g_mp.l.race));
