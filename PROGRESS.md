@@ -200,6 +200,11 @@ when the player says so). `out/win/NFSU2FreeRoam.asi`, commits 1adb5c0c and 9557
     destination is shared and every player's bot heads to it. It needs the route-following free-roam bot below (the
     GPS gives the route a destination), plus the destination sent to the others (a small message, or the state's
     extension).
+  - **Catch-up off and sponsors work** (03:18-03:24, build 46ea8b3f on both PCs, S2_CIRCUIT_4, the desktop hosting):
+    the race came with Catch Up 1 and the plugin set it to 0 at the start. Both race bots took over (the laptop's
+    twice); the desktop's raced the last 5 minutes and **won** (place 1, it counts). The player: "better than before".
+    Then the first **sponsor offer**: 4 offered, "Sponsor offer 1 of 4: STREETGLOW. Signing bonus 1275, its races pay
+    900", Yes signed it ($3550 -> $4825), saved at once.
   - **The desktop's game crashed at 03:10:52** as it left free roam (the world torn down at 03:10:50): an access
     violation in SPEED2.EXE at 0x73CA78, in 0x73CA50 (a lookup through the table at [0x8B7BB0]: +0x38 an index, +0x34
     the entries, +0x58 + 4 x (entry >> 16 & 31) a pointer that was 0, read at +0x2C). The plugin logged no fault. It
