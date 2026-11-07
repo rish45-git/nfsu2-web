@@ -152,9 +152,15 @@ static void ai_add(void){
         uint32_t r = recs + i * REC_SZ;
         MR8(r) = 0; MR8(r + REC_GRID) = (uint8_t)freep[k]; MR8(r + REC_SKILL) = (uint8_t)skill;
         /* their names (the player's pick, 2026-11-07) */
+        /* (a new pick each race, fix phase 8: the 4 in an order from the lobby, the same on every PC of the race; racer
+         * 1 was always Claude, 2 always ChatGPT) */
         static const char *const k_names[4] = { "Claude", "ChatGPT", "Gemini", "DeepSeek" };
+        int order[4] = { 0, 1, 2, 3 };
+        uint32_t sd = (lid ? lid : 0x5eed1234u) * 2654435761u + 0x9e3779b9u;
+        for (int z = 3; z > 0; z--){ sd = sd * 1664525u + 1013904223u; int y = (int)((sd >> 16) % (uint32_t)(z + 1)); int tmp = order[z]; order[z] = order[y]; order[y] = tmp; }
+        const char *pick = k_names[order[k & 3]];
         for (int q = 0; q < 16; q++) MR8(r + REC_NAME + (uint32_t)q) = 0;
-        for (int q = 0; k_names[k & 3][q] && q < 15; q++) MR8(r + REC_NAME + (uint32_t)q) = (uint8_t)k_names[k & 3][q];
+        for (int q = 0; pick[q] && q < 15; q++) MR8(r + REC_NAME + (uint32_t)q) = (uint8_t)pick[q];
         char nm[17]; int j = 0;
         for (; j < 16 && MR8(r + REC_NAME + (uint32_t)j) >= 0x20 && MR8(r + REC_NAME + (uint32_t)j) < 0x7f; j++) nm[j] = (char)MR8(r + REC_NAME + (uint32_t)j);
         nm[j] = 0;
@@ -211,7 +217,144 @@ static void ai_finish_frame(void){
     }
 }
 /* roam_asi.c, each frame */
-void airacers_win_frame(void){ ai_finish_frame(); }
+/* ---- the AI racers rise when they fall behind (fix phase 8, Rishi's rules, 2026-11-07) -----------------------------
+ * Only while a human leads the race (a LAN race with ours in it).  The gap: a racer's progress is its record's +0x14
+ * (laps, the whole race: 1.0 at the end of lap 1, seen in a career circuit 12:38), and an AI racer's gap to the leading
+ * human is the progress between them over that human's pace (laps a second, over the last 5 s): the time it needs to
+ * be where the leader is now.  An AI racer 15 s or more behind gets a set (acceleration +10 %, top speed +10 %, grip
+ * +15 %); then every 5 s, one that did not close at least 2 s on the leader gets another (no most).  One that overtakes
+ * the leading human gets no more and keeps its sets; fallen back to 15 s behind again (rammed), the sets go on.  At the
+ * race's end (its state no longer racing, the world still up) every car is as it was.  The sets add up: n sets are
+ * +10n % torque (the engine reads its curve +0x230 and nitrous +0x2DC in place, 0x594300), the drag +0x290 over
+ * (1 + 0.1n)^2 (the top speed is where drag meets the push; the physics reads it live, 0x59A39C), and the 4 wheels'
+ * grip factor (car +0x34 its physics object, +0x38..+0x44 its wheels, +0x188 the tyres' force factor, 1 normally,
+ * 0x59D600) 1 + 0.15n.  The race balance (mprace.c) is told of each new curve (mprace_balance_touch), so it does not
+ * take it for a car built again */
+void mprace_balance_touch(uint32_t car);
+#define RS_PROG      0x14u
+#define RS_DONE      0x10u
+#define CAR_ID       0x0au
+#define CAR_RIDE     0x10u
+#define CAR_PHYSOBJ  0x34u
+#define WH_GRIP      0x188u
+#define PI_TORQUE    0x230u
+#define PI_DRAG      0x290u
+#define PI_NITROUS   0x2dcu
+#define RISE_N       6
+typedef struct {
+    uint32_t car, pi; int sets, armed, passed, based; float t[9], nos, drag, gap_ref, t0_set; DWORD check_at;
+} Rise;
+static Rise g_rise[RISE_N];
+static int g_rise_n; static uint32_t g_rise_race;
+static float g_lead_hist[8]; static DWORD g_lead_hist_at[8]; static int g_lead_hist_i; static DWORD g_lead_sample_at;
+static uint32_t rise_pi(uint32_t car){ uint32_t r = ok(car, 0x14) ? MR32(car + CAR_RIDE) : 0; return ok(r + 0x10u, PI_NITROUS + 4u) ? r + 0x10u : 0; }
+static void rise_wheels(uint32_t car, float g){
+    uint32_t ph = ok(car, CAR_PHYSOBJ + 4u) ? MR32(car + CAR_PHYSOBJ) : 0;
+    if (!ok(ph, 0x48)) return;
+    for (uint32_t w = 0; w < 4u; w++){ uint32_t wh = MR32(ph + 0x38u + 4u * w); if (ok(wh, WH_GRIP + 4u)) MRF32(wh + WH_GRIP) = g; }
+}
+static void rise_apply(Rise *b){
+    uint32_t pi = rise_pi(b->car);
+    if (!pi) return;
+    if (!b->based || MRF32(pi + PI_TORQUE) != b->t0_set){              /* (first, or the car built again: its curve anew) */
+        for (int i = 0; i < 9; i++) b->t[i] = MRF32(pi + PI_TORQUE + 4u * (uint32_t)i);
+        b->nos = MRF32(pi + PI_NITROUS); b->drag = MRF32(pi + PI_DRAG); b->pi = pi; b->based = 1;
+    }
+    float f = 1.f + 0.10f * (float)b->sets, g = 1.f + 0.15f * (float)b->sets;
+    for (int i = 0; i < 9; i++) MRF32(pi + PI_TORQUE + 4u * (uint32_t)i) = b->t[i] * f;
+    MRF32(pi + PI_NITROUS) = b->nos * f;
+    MRF32(pi + PI_DRAG) = b->drag / (f * f);
+    b->t0_set = MRF32(pi + PI_TORQUE);
+    rise_wheels(b->car, g);
+    mprace_balance_touch(b->car);
+}
+static void rise_undo(void){
+    for (int k = 0; k < g_rise_n; k++){
+        Rise *b = &g_rise[k];
+        if (!b->based || !b->sets) continue;
+        uint32_t pi = rise_pi(b->car);
+        if (pi && pi == b->pi){
+            for (int i = 0; i < 9; i++) MRF32(pi + PI_TORQUE + 4u * (uint32_t)i) = b->t[i];
+            MRF32(pi + PI_NITROUS) = b->nos; MRF32(pi + PI_DRAG) = b->drag;
+            rise_wheels(b->car, 1.f);
+            mprace_balance_touch(b->car);
+        }
+    }
+    if (g_rise_n) roam_log("[ai] rising: the race is over, the AI racers' sets taken off\n");
+    g_rise_n = 0; g_rise_race = 0;
+}
+static void rise_frame(void){
+    uint32_t race = ok(G_RACE, 4) ? MR32(G_RACE) : 0;
+    int racing = MR32(G_GAMEMODE) == 0x200u && MR32(G_FLOW) == 6u && race && ok(race, 0xbf0) && MR32(race) == 4u;
+    if (!racing){
+        if (g_rise_race && MR32(G_FLOW) == 6u && race == g_rise_race) rise_undo();      /* (over, the world still up) */
+        else if (g_rise_race){ g_rise_n = 0; g_rise_race = 0; }                        /* (the world gone: its cars too) */
+        return;
+    }
+    if (race != g_rise_race){ g_rise_race = race; g_rise_n = 0; g_lead_hist_i = 0; g_lead_sample_at = 0; for (int i = 0; i < 8; i++) g_lead_hist_at[i] = 0; }
+    uint32_t n = MR32(race + 0x24u);
+    if (n > 8u) return;
+    float lead_h = -1.f, lead_all = -1.f; int lead_is_ai = 0;
+    for (uint32_t i = 0; i < n; i++){
+        uint32_t r = MR32(race + 0xbd0u + 4u * i), car = ok(r, 0x18) ? MR32(r) : 0;
+        if (!ok(car, 0x30)) continue;
+        float p = MRF32(r + RS_PROG); uint16_t id = (uint16_t)MR16(car + CAR_ID);
+        if (!(p > -1.f && p < 100.f)) continue;
+        if (id < 100u && p > lead_h) lead_h = p;
+        if (p > lead_all){ lead_all = p; lead_is_ai = id >= 100u; }
+    }
+    DWORD now = GetTickCount();
+    if (lead_h < 0.f) return;
+    if (now - g_lead_sample_at >= 1000u){                                             /* the leader's pace: 5 s back */
+        g_lead_sample_at = now;
+        g_lead_hist[g_lead_hist_i & 7] = lead_h; g_lead_hist_at[g_lead_hist_i & 7] = now; g_lead_hist_i++;
+    }
+    int back = g_lead_hist_i - 6; if (back < 0) return;
+    float p5 = g_lead_hist[back & 7]; DWORD t5 = g_lead_hist_at[back & 7];
+    float rate = t5 && now > t5 ? (lead_h - p5) / ((float)(now - t5) / 1000.f) : 0.f;   /* laps a second */
+    if (!(rate > 0.0005f)) return;                                                    /* (the leader stands: no gap to tell) */
+    for (uint32_t i = 0; i < n; i++){
+        uint32_t r = MR32(race + 0xbd0u + 4u * i), car = ok(r, 0x18) ? MR32(r) : 0;
+        if (!ok(car, 0x30) || (uint16_t)MR16(car + CAR_ID) < 100u || MR16(r + RS_DONE)) continue;
+        Rise *b = 0;
+        for (int k = 0; k < g_rise_n; k++) if (g_rise[k].car == car) b = &g_rise[k];
+        if (!b){ if (g_rise_n >= RISE_N) continue; b = &g_rise[g_rise_n++]; memset(b, 0, sizeof *b); b->car = car; }
+        unsigned cid = (unsigned)MR16(car + CAR_ID);
+        float p = MRF32(r + RS_PROG), gap = (lead_h - p) / rate;
+        /* test control (NFSU2_ROAM_TEST_RISE=1): every AI racer as if 20 s behind a human leader and closing nothing,
+         * so a set every 5 s (6 at most): the sets' effect on the road, its speed in each line */
+        static int test = -1;
+        if (test < 0){ const char *e = roam_opt("NFSU2_ROAM_TEST_RISE"); test = e && *e == '1'; if (test) roam_log("[ai] rising: TEST, every AI racer 20 s behind, a set every 5 s\n"); }
+        if (test){ if (b->sets >= 6) continue; p = lead_h - 1.f; gap = b->armed ? b->gap_ref : 20.f; lead_is_ai = 0; }
+        if (b->sets && b->based && rise_pi(car) && MRF32(rise_pi(car) + PI_TORQUE) != b->t0_set) rise_apply(b);   /* (built again) */
+        if (p > lead_h){
+            if (b->armed && !b->passed) roam_log("[ai] rising: AI racer %u overtook the leading human with %d set(s): no more, kept\n", cid, b->sets);
+            b->passed = 1; b->armed = 0; continue;
+        }
+        if (lead_is_ai) continue;                                                     /* only while a human leads */
+        if (b->passed){
+            if (gap < 15.f) continue;
+            b->passed = 0; roam_log("[ai] rising: AI racer %u fell back %.0f s behind: the sets go on\n", cid, (double)gap);
+        }
+        if (!b->armed){
+            if (gap < 15.f) continue;
+            b->armed = 1; b->sets++; b->gap_ref = gap; b->check_at = now + 5000u;
+            rise_apply(b);
+            roam_log("[ai] rising: AI racer %u is %.1f s behind the leading human: set %d (acceleration and top speed +%d %%, grip +%d %%)\n",
+                     cid, (double)gap, b->sets, 10 * b->sets, 15 * b->sets);
+        } else if ((int)(now - b->check_at) >= 0){
+            if (b->gap_ref - gap < 2.f){
+                b->sets++; rise_apply(b);
+                uint32_t pi = rise_pi(car);
+                roam_log("[ai] rising: AI racer %u closed %.1f s in 5 s (%.1f s behind): set %d (%.0f km/h; torque at the top %.0f N m, drag %.4f, grip %.2f)\n", cid,
+                         (double)(b->gap_ref - gap), (double)gap, b->sets, (double)(MRF32(car + 0x42cu) * 3.6f),
+                         pi ? (double)(MRF32(pi + PI_TORQUE + 32u) * 1000.f) : 0.0, pi ? (double)MRF32(pi + PI_DRAG) : 0.0, 1.0 + 0.15 * b->sets);
+            }
+            b->gap_ref = gap; b->check_at = now + 5000u;
+        }
+    }
+}
+void airacers_win_frame(void){ ai_finish_frame(); rise_frame(); }
 
 /* The network's report of a racer's finish (0x602000, thiscall 0x89CF48 (car id, place, ..., how), ret 0x10): it looks the
  * network player up by the car id and tells the others; with none (al 0) the finish is taken back (FinishRacer

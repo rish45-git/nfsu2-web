@@ -12,7 +12,7 @@ says native clients are welcome there.
 
 **State:**
 
-- **Builds:** the repo builds `d227b74a` (fix phase 7). The desktop runs `d227b74a` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
+- **Builds:** the repo builds `a515f431` (fix phase 8). The desktop runs `a515f431` (CarSaveKey = F11, CarPutKey = F12) with `AddOnStockLook = 0`,
   `AddOnStockRace = 1`, `AiRacers = 2`. The laptop runs `825c3aa1` too (from the stick at ~10:00, Rishi's OK in the
   laptop session; the old asi in `scripts\backup-20261107-pre-825c3aa1\`) with `AiRacers = 2` (from 11:23, fix phase 1). The stick
   (`laptop-update`, also `C:\dev\laptop-update`) holds `825c3aa1`, verified on the stick (50 files) and on the laptop.
@@ -125,7 +125,7 @@ reads this file first:**
      entry for [0x89E7A8], at most 16, cmp edi,0x10 at 0x4FEA51); a stub there scales the count while a career race
      is set up ([0x863470]). "a career race's traffic: 12 car(s) -> 6". No log inside the hook (phase 6's floating
      point): guards_win_frame writes it.
-8. **Fix phase 8 (Opus): Rising AI racers, and new names each race** (Rishi's spec, 2026-11-07 ~11:00; the AI
+8. **Fix phase 8 (Opus): Rising AI racers, and new names each race: DONE (13:28), build a515f431** (Rishi's spec, 2026-11-07 ~11:00; the AI
    racers in LAN races only, airacers_win.c, on each PC its own):
    - only while a human leads the race. Every AI racer 15 s or more behind that leader gets a set: acceleration
      +10 %, top speed +10 %, handling (tyre grip) +15 %;
@@ -139,6 +139,15 @@ reads this file first:**
      start, re-apply them every 3-5 s (the game's own recompute), or hook where they are read;
    - names: a random pick from Claude, ChatGPT, Gemini, DeepSeek each race (today racer 1 is always Claude, 2 always
      ChatGPT), seeded from the lobby so every PC of the race shows the same.
+   - **Built** (airacers_win.c rise_frame; mprace.c mprace_balance_touch): the gap from the racers' progress (+0x14,
+     laps of the whole race) over the leading human's pace (laps a second over 5 s); n sets: torque and nitrous x
+     (1 + 0.1n), drag (+0x290) / (1 + 0.1n)^2, the 4 wheels' grip (+0x188) 1 + 0.15n (sets add up; Rishi did not say
+     add or multiply); undone at the race's end with the world still up. Names: the 4 in an order from the lobby id.
+   - **Tested** 13:26-13:28 (the desktop hosting, the laptop joined): names Claude and Gemini (was always Claude,
+     ChatGPT); with NFSU2_ROAM_TEST_RISE=1 (every AI racer as 20 s behind) a set every 5 s from 51 s in (the pace
+     needs 6 samples of a moving human leader): bot 100's top torque 493 -> 535 -> 576 -> 617 N m (sets 2-5),
+     grip 1.30 .. 1.75, drag 0.0003 -> 0.0002; no crash. Not yet seen: the rules in a real race with a human ahead
+     by 15 s (the log's "[ai] rising:" lines will say), and the undo line at a race's end (the test was quit).
 9. **Fix phase 9 (Fable): The crash with an add-on car in free roam (AddOnStockLook = 1)**, the desktop runs it off meanwhile; rarer now
    that Rishi drives the Supra (a stock car).
    **0x5CE83E in SPEED2.EXE** (laptop, c212de5c, 2026-11-07 08:37:42, 0xC0000005): in free roam, ~2.5 min after

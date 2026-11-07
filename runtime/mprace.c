@@ -591,6 +591,15 @@ static int race_cars(uint32_t *car, uint32_t *pi, int *n){
 /* the cars as evened out: each one's car, its power, and the curve's first point as left (a rebuilt info has
  * its own again); the car's first word (its class), to know it again */
 static struct { int n; uint32_t car[RACE_CARS_MAX], vt[RACE_CARS_MAX]; float f[RACE_CARS_MAX], t0[RACE_CARS_MAX]; long check_at; } g_bal;
+/* (airacers_win.c's rising AI racers, fix phase 8: a car whose curve they changed is not one "built again": its new
+ * curve is the one balance_hold keeps, or it would put the power factor on top of theirs) */
+void mprace_balance_touch(uint32_t car){
+    for (int i = 0; i < g_bal.n; i++){
+        if (g_bal.car[i] != car) continue;
+        uint32_t pi = perf_info(car);
+        if (pi) g_bal.t0[i] = MRF32(pi + PI_TORQUE);
+    }
+}
 static void balance_apply(int i){
     uint32_t pi = perf_info(g_bal.car[i]);
     if (!pi) return;
