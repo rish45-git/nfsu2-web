@@ -49,7 +49,8 @@ says native clients are welcome there.
   part: Rishi's choice is a Tailscale share of v2; the ini's ws://100.76.38.37:8691/lan stands). The Rust server does not build natively on
   Windows (crates/util cpu.rs / logfile.rs are Unix-only: getrusage, std::os::unix mode()), so "host" for the friend
   means WSL; a Windows build of the server would be the way to make him a real click-and-play host.
-- **2026-11-12: the laptop runs cb96377c too** (installed from the stick after Rishi's OK; 50 sums OK; its ini unchanged, backup in scriptsbackup-20261112-pre-cb96377c). The friend's package is Desktopina (china.zip, 3.1 GB).
+- **2026-11-12: the laptop runs cb96377c too** (installed from the stick after Rishi's OK; 50 sums OK; its ini unchanged,
+  backup in scripts\backup-20261112-pre-cb96377c). The friend's package is Desktop\china (china.zip, 3.1 GB).
 - **Next:** Rishi shares v2 with the friend in the Tailscale admin and sends the invite; the friend installs Tailscale,
   accepts, plays; later: GPS target sharing between players, and a smoother gap measure across laps for the rising rule.
 
