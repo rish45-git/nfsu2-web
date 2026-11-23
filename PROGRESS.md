@@ -36,7 +36,7 @@ says native clients are welcome there.
   site's page: 403); the launcher's Check (the router found by UPnP, its WAN address 100.64.120.185 = the provider's
   NAT, said so; LAN 192.168.0.109; Tailscale 100.76.38.37; the firewall's rules seen without admin) and Host (server
   window, ini, game start, the game connected). Join: every address form on a scratch copy.
-- **Not tried yet:** a race through the native server with a second real game (the laptop was asked, 05:21); the
+- **Not tried yet:** a race through the native server with a second real game (Rishi: skip it for now, 2026-11-23); the
   UPnP port opening on a router with a public address (the desktop's is behind the provider's NAT: only the
   discovery and the address query ran); the firewall's UAC step (the desktop had rules for 8691 already); a Windows
   build of the tests (their helpers use Unix symlinks and modes).
