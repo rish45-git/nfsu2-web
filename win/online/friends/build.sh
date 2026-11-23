@@ -22,7 +22,7 @@ cp target/release/nfsu2-server.exe "$OUT/online/"
 cp "$HERE/Play-Online.ps1" "$OUT/online/"
 # (cmd and Notepad want CRLF)
 sed 's/\r$//; s/$/\r/' "$HERE/Play Online.bat" > "$OUT/Play Online.bat"
-sed 's/\r$//; s/$/\r/' "$HERE/README.txt" > "$OUT/README.txt"
+sed 's/\r$//; s/$/\r/' "$HERE/README.txt" > "$OUT/HOW TO PLAY ONLINE.txt"
 rm -f "$REPO/out/win/NFSU2-online-addon.zip"
 (cd "$OUT" && powershell.exe -NoProfile -Command "Compress-Archive -Path * -DestinationPath '..\\NFSU2-online-addon.zip' -Force")
 ls -la "$OUT" "$OUT/online" "$REPO/out/win/NFSU2-online-addon.zip"
