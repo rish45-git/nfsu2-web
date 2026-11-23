@@ -107,6 +107,9 @@ If something goes wrong
   scripts\NFSU2FreeRoam.log says "cannot reach the server" when the address is wrong or the host's server window
   is closed. The game keeps trying by itself and connects as soon as the server is there.
 - The host's friends cannot connect: choose 5 (Check) on the host's PC and read the "over the internet" line.
+- You hosted before with the older Linux (WSL) server: choose Host as usual. The launcher notices that server and
+  offers to shut it down, and removes the Windows port forward that set-up needed (one Yes click). A port forward
+  you made in your router for port 8691 can stay: the new server uses the same port.
 - You see a friend's name but not the car: it is more than a few hundred metres away; press F9.
 - A crash: before starting the game again, copy scripts\NFSU2FreeRoam.log somewhere. The next start overwrites
   it, and it is the only record of what happened.

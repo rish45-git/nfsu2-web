@@ -201,8 +201,50 @@ function Open-Firewall {
 function Get-Players {
     try { return (Invoke-RestMethod -Uri "http://127.0.0.1:$Port/players" -TimeoutSec 3).players } catch { return $null }
 }
+# An older set-up on this PC (the Linux server in WSL, before there was one for Windows) can be in the way: its server
+# still running on the port, or the Windows port forward that led the friends' games to it.
+function Get-OldForwards {
+    $found = @()
+    try {
+        foreach ($l in @(& netsh interface portproxy show v4tov4 2>$null)) {
+            if ("$l" -match '^\s*(\S+)\s+(\d+)\s+(\S+)\s+(\d+)\s*$' -and [int]$Matches[2] -eq $Port) {
+                $o = @{ Listen = $Matches[1]; To = $Matches[3]; ToPort = [int]$Matches[4] }
+                if ($o.Listen -eq "*") { $o.Listen = "0.0.0.0" }
+                # in the way: it holds the port on every address (the server cannot listen then), or it leads
+                # somewhere other than this PC's own server
+                $o.Bad = ($o.Listen -eq "0.0.0.0") -or (($o.To -ne "127.0.0.1") -and ($o.To -ne "localhost")) -or ($o.ToPort -ne $Port)
+                $found += $o
+            }
+        }
+    } catch {}
+    return $found
+}
+function Clear-OldForwards {
+    $bad = @(Get-OldForwards | Where-Object { $_.Bad })
+    if ($bad.Count -eq 0) { return }
+    Say "An older set-up left a Windows port forward on port $Port (to $($bad[0].To)). It would catch your friends' games" Yellow
+    Say "before this server does. Windows asks for your OK to remove it: click Yes." Yellow
+    foreach ($b in $bad) {
+        try { Start-Process netsh -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList "interface portproxy delete v4tov4 listenaddress=$($b.Listen) listenport=$Port" } catch {}
+    }
+    foreach ($b in @(Get-OldForwards | Where-Object { $_.Bad })) {
+        Say "It is still there. In an administrator PowerShell, run:" Red
+        Say "    netsh interface portproxy delete v4tov4 listenaddress=$($b.Listen) listenport=$Port" Red
+    }
+}
 function Start-Server {
-    if ($null -ne (Get-Players)) { Say "A server already runs on this PC (port $Port): using it."; return $true }
+    if ($null -ne (Get-Players)) {
+        if (Get-Process nfsu2-server -ErrorAction SilentlyContinue) { Say "The server already runs on this PC (port $Port): using it."; return $true }
+        # a server answers, and it is not this one: the older set-up's, in WSL
+        Say "Another server answers on port ${Port} of this PC: the older Linux (WSL) one, most likely. The new one cannot start beside it." Yellow
+        $a = ""
+        try { $a = ("" + (Read-Host "Shut the Linux side (WSL) down now, to use the new server? Y or N")).Trim().ToLower() } catch {}
+        if ($a -eq "y" -or $a -eq "yes") {
+            try { & wsl.exe --shutdown 2>$null | Out-Null } catch {}
+            for ($i = 0; $i -lt 16 -and $null -ne (Get-Players); $i++) { Start-Sleep -Milliseconds 500 }
+        }
+        if ($null -ne (Get-Players)) { Say "It still answers. Close its window, then choose Host again." Red; return $false }
+    }
     if (Test-Port "127.0.0.1" $Port 1000) { Say "Port $Port on this PC is taken by another program: close it, or restart the PC." Red; return $false }
     if (-not (Test-Path $Server)) { Say "No nfsu2-server.exe in $Here." Red; return $false }
     try { Unblock-File $Server } catch {}
@@ -248,6 +290,7 @@ function Show-Addresses($check) {
 }
 function Invoke-Host {
     Say "HOST A GAME: this PC is the server." White
+    Clear-OldForwards
     if (-not (Start-Server)) { throw "The server is not running." }
     if (-not (Open-Firewall)) { Say "Windows Firewall still blocks port ${Port}: friends cannot join until it is allowed (run this again and click Yes)." Red }
     Show-Addresses $false
@@ -261,7 +304,11 @@ function Invoke-Check {
     Say "CHECK (nothing is changed): can this PC host?" White
     $n = Get-Players
     $s = "not running"; if ($null -ne $n) { $s = "running, $n player(s) on it" }
+    if ($null -ne $n -and -not (Get-Process nfsu2-server -ErrorAction SilentlyContinue)) { $s = "ANOTHER server answers on port $Port (the older Linux / WSL one?): Host offers to shut it down" }
     Say "  server    : $s"
+    foreach ($b in @(Get-OldForwards | Where-Object { $_.Bad })) {
+        Say "  old set-up: a Windows port forward $($b.Listen):${Port} -> $($b.To):$($b.ToPort) is in the way (Host removes it, with your OK)" Yellow
+    }
     $f = "closed for port $Port (Host opens it, with your OK)"; if (Test-Firewall) { $f = "open for port $Port" }
     Say "  firewall  : $f"
     Say "  game      : Server = $(Get-IniServer)"
