@@ -7,7 +7,7 @@
 #   out/win/friends/online/Play-Online.ps1
 #   out/win/friends/online/nfsu2-server.exe     web/server-rs built for Windows, the C runtime linked in (no
 #                                               redistributable needed); run with --friends by the launcher
-#   out/win/friends/README.txt
+#   out/win/friends/HOW TO PLAY ONLINE.txt      win/online/friends/README.txt, under the name a player looks for
 #   out/win/NFSU2-online-addon.zip              the same, to unpack into a game folder that has the plugin
 #
 # Nothing of the game is in it.  The plugin (NFSU2FreeRoam.asi and its .ini) is built and shipped as before.
