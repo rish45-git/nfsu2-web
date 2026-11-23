@@ -8,7 +8,50 @@ ones); the original `SPEED2.EXE` is never modified, not even the test copy's (ev
 ASI plugin); test in `C:\Games\NFSU2-online`, never in `C:\Games\NFSU2`; the public server only after its owner
 says native clients are welcome there.
 
-## Where to resume (2026-11-07 18:30, Fable; phases 9, 10 and task 4 done; the friend's package on the Desktop)
+## Where to resume (2026-11-23, Fable: the server runs natively on Windows; one-click Host / Join)
+
+- **The Rust server builds and runs on Windows** (x86_64-pc-windows-msvc; `cargo build --release -p nfsu2-server`, no
+  WSL). What differed, all behind `cfg`: `nfsu2_util::osfs` (std's Unix file traits under the same names: no modes,
+  device/inode 0, `read_at` = `seek_read`, `disk_free` by GetDiskFreeSpaceExW), `cpu.rs` (GetProcessTimes),
+  `nfsu2_http::errno` (Winsock / Win32 codes for the errno the server tells apart; no SO_REUSEADDR on Windows, where
+  it lets a second server take the port), Unix sockets off (`serve_unix`, `--http-socket`), `paths.rs` (drive paths
+  kept as "C:/a/b"; `paths::real` for canonical paths without `\?\`), signals (Ctrl+C and the console's close for
+  SIGINT / SIGTERM), and the control channel (`ctl`): a TCP port on 127.0.0.1, its number in `control.port` in the
+  state folder, where Unix has `control.sock`. The Linux build and its tests are unchanged (WSL: the suites of the
+  touched crates and the server's own pass).
+- **`--friends`** (new flag): a player's own PC as the server. The HTTP port listens on every address (:: and
+  0.0.0.0), answers `/lan` and `/players` only (no page, no vault / names, none of the game folder's files: 404), a
+  Host that is an IP address is the server's own (`HostCheck::any_address`; a name still needs `--host`), no block
+  compression. Refused with `--tls-cert` / `--behind-proxy`.
+- **The launcher** (`win/online/friends`: `Play Online.bat`, `Play-Online.ps1`, `README.txt`, `build.sh`): Host a game
+  (starts `online\nfsu2-server.exe --friends` in its own minimised window, state in %LOCALAPPDATA%\NFSU2-online-server,
+  the firewall rule with one UAC question, the router's port by UPnP (SSDP + SOAP, no COM), the addresses to give:
+  internet, LAN, Tailscale, the best one on the clipboard; sets `Server = ws://127.0.0.1:8691/lan`, starts the game),
+  Join a friend (an address in any form -> the ini's Server line, starts the game), Play, Stop hosting, Check (reads
+  only). `build.sh` builds the exe with the C runtime linked in (imports: kernel32, ws2_32, advapi32, bcrypt, ntdll
+  only) and makes `out/win/friends` and `out/win/NFSU2-online-addon.zip` (4 MB).
+- **Tried on the desktop, 2026-11-23 05:00-05:20:** `switch_probe.exe` 7 of 7; the game on the native server (virtual
+  LAN address, the hub answers); two roambots joined and their cars were drawn; the routes (/, /data/..., /vault,
+  /names: 404; /lan by localhost, the LAN and the Tailscale address: 101; by a foreign Host name: 421; from another
+  site's page: 403); the launcher's Check (the router found by UPnP, its WAN address 100.64.120.185 = the provider's
+  NAT, said so; LAN 192.168.0.109; Tailscale 100.76.38.37; the firewall's rules seen without admin) and Host (server
+  window, ini, game start, the game connected). Join: every address form on a scratch copy.
+- **Not tried yet:** a race through the native server with a second real game (the laptop was asked, 05:21); the
+  UPnP port opening on a router with a public address (the desktop's is behind the provider's NAT: only the
+  discovery and the address query ran); the firewall's UAC step (the desktop had rules for 8691 already); a Windows
+  build of the tests (their helpers use Unix symlinks and modes).
+- **Where it is:** C:\Games\NFSU2-online (the launcher installed, `HOW TO PLAY ONLINE.txt`), Desktop\china (the
+  friend's package: launcher added, README replaced; china.zip is NOT rebuilt), Desktop\NFSU2-online-addon.zip (for
+  a friend who has the game folder already: unpack into it). The desktop's ini is on `ws://127.0.0.1:8691/lan` now
+  (the friend's server was 71.212.48.130: Join with that address puts it back). The WSL server and its portproxy
+  entries (192.168.0.109 and 100.76.38.37 -> 127.0.0.1:8691) still exist; with the native server they are not
+  needed (it listens on every address itself), and through them every LAN / Tailscale player looks like 127.0.0.1.
+- **2026-11-23, earlier:** the first internet session with the friend (rnld) on his own WSL server at
+  71.212.48.130: one host crash (3 s into his race's load, the log lost at his restart: the plugin's log is made anew
+  at each start), then a full circuit, 4 racers, no sets (the AI racers led). F8 (ServerKey) next to F9 took the
+  desktop off his server once. Rishi: the rising rule stays multiplayer-only.
+
+## Where to resume (2026-11-07 18:30, superseded)
 
 - **Done, fix phase 9** (commits 542b85f6, 68a234ca, 7e514c50): the 0x5CE83E crash was the game freeing the Cars pool's
   extra block (0x63A6F0 at the track's unload) with friends' rides still in it: the Windows plugin never had the port's
