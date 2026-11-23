@@ -2,20 +2,25 @@
 //! the manifest and the module, the timers, the signals, and the start-up lines (the tests wait for "  access    :"
 //! and read others).
 
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::time::{Instant, interval_at};
 
 use nfsu2_http::tls::TlsState;
-use nfsu2_http::{Limits, bind, serve, serve_unix};
+#[cfg(unix)]
+use nfsu2_http::serve_unix;
+use nfsu2_http::{Limits, bind, serve};
 use nfsu2_lan::{LanOptions, LanSwitch};
 use nfsu2_online::{LobbyTrace, OnlineHost, OnlineOptions};
 use nfsu2_roam::{RoamHub, RoamOptions};
 use nfsu2_util::cpu::{QuotaBusy, WorkersBusy, process_cpu_seconds};
+use nfsu2_util::osfs::DirBuilderExt;
+#[cfg(unix)]
+use nfsu2_util::osfs::{FileTypeExt, MetadataExt, PermissionsExt};
 use nfsu2_util::{Host, log};
 use nfsu2_vault::{Sweep, Vault, VaultOptions};
 
@@ -68,13 +73,15 @@ fn state_folder(o: &Options) -> String {
     }
     // (only a folder of this user's own is made 0700: not ours to change otherwise; /proc/self is owned by the
     // process's user)
+    // (Windows: the folder has its user's rights as it is made, under their profile or where they put the game)
+    #[cfg(unix)]
     if let (Ok(st), Ok(me)) = (std::fs::metadata(&o.state), std::fs::metadata("/proc/self"))
         && st.uid() == me.uid()
     {
         let _ = std::fs::set_permissions(&o.state, std::fs::Permissions::from_mode(0o700));
     }
-    match std::fs::canonicalize(&o.state) {
-        Ok(p) => p.to_string_lossy().into_owned(),
+    match paths::real(&o.state) {
+        Ok(p) => p,
         Err(e) => die(&format!("{}: {e}", o.state)),
     }
 }
@@ -84,6 +91,7 @@ fn state_folder(o: &Options) -> String {
 /// (cloudflared's image: 65532), and anything on this machine reaches the HTTP port too.  For each message a page and
 /// the switch exchange, a Unix socket spares both ends TCP's work on 127.0.0.1 (nfsu2.xyz, 2026-10-30, 5,800 players:
 /// the kernel's network work was about 60 % of the CPU, much of it this hop's)
+#[cfg(unix)]
 fn bind_unix(at: &str) -> std::io::Result<tokio::net::UnixListener> {
     #[cfg(target_os = "linux")]
     if let Some(name) = at.strip_prefix('@') {
@@ -231,7 +239,8 @@ pub async fn run(o: Options, cores: usize) {
     // the threads that keep the game data's blocks at brotli's best (kept.rs; 0: none): none on a --dev server unless
     // given, where a test's fresh state folder took 2 cores for most of an hour (2026-11-03: three test servers at
     // once, 6 of the PC's 20) for smaller downloads no test needs
-    let compress_threads = env_num("NFSU2_COMPRESS_THREADS", if o.dev { 0 } else { COMPRESS_THREADS }) as usize;
+    // (and none with --friends: the game data is not handed out there)
+    let compress_threads = if o.friends { 0 } else { env_num("NFSU2_COMPRESS_THREADS", if o.dev { 0 } else { COMPRESS_THREADS }) as usize };
     let app = Arc::new(App::new(
         o,
         real_state,
@@ -487,6 +496,7 @@ pub async fn run(o: Options, cores: usize) {
                 }
             });
         }
+        #[cfg(unix)]
         {
             let (app, tls) = (app.clone(), tls.clone());
             let mut hup = signal(SignalKind::hangup()).unwrap_or_else(|e| die(&format!("SIGHUP: {e}")));
@@ -498,9 +508,16 @@ pub async fn run(o: Options, cores: usize) {
         }
     }
     if o.http_port != 0 {
-        let (listener, _) = bind("127.0.0.1", o.http_port, None).await.unwrap_or_else(|m| die(&format!("cannot listen: {m}")));
+        // (--friends: on every address of this machine, for the friends' games; else for this machine only)
+        let bound = if o.friends { bind("::", o.http_port, Some("0.0.0.0")).await } else { bind("127.0.0.1", o.http_port, None).await };
+        let (listener, _) = bound.unwrap_or_else(|m| die(&format!("cannot listen: {m}")));
         servers.push(serve(listener, None, limits.clone(), app.clone()));
     }
+    #[cfg(windows)]
+    if !o.http_socket.is_empty() {
+        die("--http-socket: a Unix socket, not on Windows (the HTTP port is there: --http-port)");
+    }
+    #[cfg(unix)]
     if !o.http_socket.is_empty() {
         let listener = bind_unix(&o.http_socket).unwrap_or_else(|e| die(&format!("cannot listen on {}: {e}", o.http_socket)));
         // as from 127.0.0.1: the proxy on this machine it is for is trusted there, and reports the player's address
@@ -522,8 +539,15 @@ pub async fn run(o: Options, cores: usize) {
     let control_up = control.is_some();
     {
         let (lan, trace, claims, days) = (lan.clone(), trace.clone(), claims.clone(), days.clone());
+        #[cfg(unix)]
         let mut term = signal(SignalKind::terminate()).unwrap_or_else(|e| die(&format!("SIGTERM: {e}")));
+        #[cfg(unix)]
         let mut int = signal(SignalKind::interrupt()).unwrap_or_else(|e| die(&format!("SIGINT: {e}")));
+        // Windows: the console's window closed (the server has a few seconds then), and Ctrl+C
+        #[cfg(windows)]
+        let mut term = tokio::signal::windows::ctrl_close().unwrap_or_else(|e| die(&format!("the console's close: {e}")));
+        #[cfg(windows)]
+        let mut int = tokio::signal::windows::ctrl_c().unwrap_or_else(|e| die(&format!("Ctrl+C: {e}")));
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -583,6 +607,10 @@ pub async fn run(o: Options, cores: usize) {
         ));
     }
     match o.tls {
+        Tls::None if o.friends => lines.push(format!(
+            "  friends   : port {} on every address of this PC, for the game's plugin only (Server = ws://<this PC's address>:{}/lan): no page, no game data",
+            o.http_port, o.http_port
+        )),
         Tls::None => lines
             .push("  other PCs : none: they need HTTPS, from --tls-cert/--tls-key or a proxy or tunnel in front".into()),
         Tls::Cert => lines.push(format!(

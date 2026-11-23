@@ -21,7 +21,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+use nfsu2_util::osfs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -322,12 +322,7 @@ impl KeptBlocks {
 
     /// whether the folder may grow: below MAX_BYTES, and MIN_FREE free on its disk
     fn check_room(&self) {
-        use std::os::unix::ffi::OsStrExt;
-        let free = std::ffi::CString::new(self.dir.as_os_str().as_bytes()).ok().and_then(|p| {
-            // SAFETY: statvfs writes the struct it is given, and only that; the path is NUL-terminated
-            let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-            (unsafe { libc::statvfs(p.as_ptr(), &mut s) } == 0).then(|| s.f_bavail as u64 * s.f_frsize as u64)
-        });
+        let free = nfsu2_util::osfs::disk_free(&self.dir);
         let ok = self.bytes.load(Ordering::Relaxed) < MAX_BYTES && free.is_none_or(|f| f >= MIN_FREE);
         self.room.store(ok, Ordering::Relaxed);
         *self.room_at.lock() = Instant::now();
@@ -383,7 +378,7 @@ impl KeptBlocks {
 
     /// the block compressed and kept, or kept as one sent as it is (false: not, as the file changed)
     fn make(&self, job: &Job) -> io::Result<bool> {
-        let f = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(&job.real)?;
+        let f = std::fs::OpenOptions::new().read(true).custom_flags(nfsu2_util::osfs::O_NOFOLLOW).open(&job.real)?;
         let md = f.metadata()?;
         if !md.is_file() || md.size() != job.size || (md.mtime(), md.mtime_nsec()) != job.mtime {
             return Ok(false);

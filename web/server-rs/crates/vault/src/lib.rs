@@ -280,7 +280,7 @@ fn system_time(ms: i64) -> SystemTime {
 }
 
 fn mkdir(p: &Path) -> io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
+    use nfsu2_util::osfs::DirBuilderExt;
     fs::DirBuilder::new().recursive(true).mode(0o700).create(p)
 }
 
@@ -317,6 +317,7 @@ impl Vault {
 
     /// the disk under the folder has `min_free` bytes and `min_free_files` files free (what an unprivileged writer
     /// may take); true when statvfs cannot tell, or the filesystem counts no files
+    #[cfg(unix)]
     fn disk_ok(&self) -> bool {
         use std::os::unix::ffi::OsStrExt;
         let Ok(path) = std::ffi::CString::new(self.o.dir.as_os_str().as_bytes()) else { return true };
@@ -327,6 +328,12 @@ impl Vault {
         }
         let free = s.f_bavail as u64 * s.f_frsize as u64;
         free >= self.o.min_free && (s.f_files == 0 || s.f_favail as u64 >= self.o.min_free_files)
+    }
+
+    /// Windows: the bytes free only (NTFS counts no files to run out of); true when that cannot be told
+    #[cfg(windows)]
+    fn disk_ok(&self) -> bool {
+        nfsu2_util::osfs::disk_free(&self.o.dir).is_none_or(|free| free >= self.o.min_free)
     }
 
     pub fn options(&self) -> &VaultOptions {
@@ -372,7 +379,7 @@ impl Vault {
 
     /// the whole file in place of the old one: a temporary file beside it (0600), synced, renamed over it
     fn write(&self, p: &Path, bytes: &[u8]) -> io::Result<()> {
-        use std::os::unix::fs::OpenOptionsExt;
+        use nfsu2_util::osfs::OpenOptionsExt;
         let dir = p.parent().expect("a keyphrase file is in a folder");
         mkdir(dir)?;
         let tmp = PathBuf::from(format!("{}.tmp-{}-{}", p.display(), std::process::id(), self.seq.fetch_add(1, Ordering::Relaxed)));

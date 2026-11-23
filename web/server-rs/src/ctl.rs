@@ -5,6 +5,7 @@
 //! said no (or is not there), 2 for no command.
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
@@ -22,7 +23,14 @@ pub fn run(argv: &[String], env: &dyn Fn(&str) -> Option<String>, repo: &str, cw
     }
     let path = paths::join(&paths::resolve(cwd, &state), SOCKET);
     let ask = || -> std::io::Result<String> {
+        #[cfg(unix)]
         let mut s = UnixStream::connect(&path)?;
+        // Windows: the file holds the port the server's control channel listens on, on 127.0.0.1
+        #[cfg(windows)]
+        let mut s = {
+            let port: u16 = std::fs::read_to_string(&path)?.trim().parse().map_err(std::io::Error::other)?;
+            std::net::TcpStream::connect(("127.0.0.1", port))?
+        };
         s.set_read_timeout(Some(Duration::from_secs(15)))?;
         let mut line = serde_json::to_string(words).map_err(std::io::Error::other)?;
         line.push('\n');

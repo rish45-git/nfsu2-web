@@ -4,7 +4,7 @@
 //! for the same key, so that a browser's copy stayed good across the switch to this server.
 
 use std::io::{self, Read};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use nfsu2_util::osfs::{MetadataExt, OpenOptionsExt};
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;

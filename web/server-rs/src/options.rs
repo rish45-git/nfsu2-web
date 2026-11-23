@@ -38,7 +38,7 @@ pub const VALUE_OPTS: [&str; 20] = [
     "--roam-hub",
     "--vault-gb",
 ];
-pub const FLAG_OPTS: [&str; 3] = ["--behind-proxy", "--dev", "--access-log"];
+pub const FLAG_OPTS: [&str; 4] = ["--behind-proxy", "--dev", "--access-log", "--friends"];
 
 /// How TLS is done: by a proxy in front, with the given certificate, or not at all (this machine only).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -67,6 +67,11 @@ pub struct Options {
     pub tls_cert: String,
     pub tls_key: String,
     pub dev: bool,
+    /// --friends: a player's own PC as the server for their friends.  The HTTP port listens on every address of the
+    /// machine (not on 127.0.0.1 only) and answers /lan and /players alone: no page, no saves or names, and nothing
+    /// of the game folder is handed out.  A Host that is an address is this server's own then (the friends type the
+    /// PC's address; a name still has to be given with --host)
+    pub friends: bool,
     pub access_log: bool,
     pub artifacts: String,
     pub max_peers: usize,
@@ -187,7 +192,7 @@ impl Fs for RealFs {
         std::path::Path::new(p).exists()
     }
     fn realpath(&self, p: &str) -> Option<String> {
-        std::fs::canonicalize(p).ok().map(|r| r.to_string_lossy().into_owned())
+        crate::paths::real(p).ok()
     }
 }
 
@@ -282,6 +287,7 @@ pub fn parse(argv: &[String], env: &dyn Fn(&str) -> Option<String>, repo: &str, 
     let tls_cert = resolve_if("--tls-cert")?;
     let tls_key = resolve_if("--tls-key")?;
     let dev = flag("--dev");
+    let friends = flag("--friends");
     let access_log = flag("--access-log");
     let artifacts = resolve_if("--artifacts")?;
     let max_peers = arg("--max-peers", "128").map_or(f64::NAN, |v| js_to_number(&v));
@@ -355,6 +361,9 @@ pub fn parse(argv: &[String], env: &dyn Fn(&str) -> Option<String>, repo: &str, 
     } else {
         Tls::None
     };
+    if friends && tls != Tls::None {
+        return Err("--friends is a player's own PC, plain HTTP on its port: without --tls-cert and --behind-proxy".into());
+    }
     if tls == Tls::Cert && https_port == 0 {
         return Err("--tls-cert needs --port: the HTTPS port".into());
     }
@@ -416,6 +425,7 @@ pub fn parse(argv: &[String], env: &dyn Fn(&str) -> Option<String>, repo: &str, 
         tls_cert,
         tls_key,
         dev,
+        friends,
         access_log,
         artifacts,
         max_peers: max_peers as usize,
@@ -517,6 +527,18 @@ mod tests {
 
     // web/test/deploy.test.mjs '--dev gating and start-up refusals': each refusal's message, in the order parse()
     // checks them
+    // --friends: a player's own PC, plain HTTP on its port
+    #[test]
+    fn friends_is_plain_http() {
+        let s = Setup::new();
+        assert!(s.parse(&["--friends"], &[]).unwrap().friends);
+        assert!(!s.parse(&[], &[]).unwrap().friends);
+        assert_eq!(
+            s.err(&["--friends", "--behind-proxy", "--host", "game.example.com"], &[]),
+            "--friends is a player's own PC, plain HTTP on its port: without --tls-cert and --behind-proxy"
+        );
+    }
+
     #[test]
     fn the_refusals_before_the_proxies() {
         let s = Setup::new();
@@ -525,7 +547,7 @@ mod tests {
             format!(
                 "unknown option --no-such-option\noptions: {}",
                 "--data --dist --wasm --port --http-port --http-socket --bind --state --tls-cert --tls-key --trusted-proxies --real-ip-header --max-peers \
-             --artifacts --lan-impair --host --online --online-trace --roam-hub --vault-gb --behind-proxy --dev --access-log"
+             --artifacts --lan-impair --host --online --online-trace --roam-hub --vault-gb --behind-proxy --dev --access-log --friends"
             )
         );
         assert_eq!(s.err(&["--http-port"], &[]), "--http-port needs a value");

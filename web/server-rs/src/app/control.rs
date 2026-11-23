@@ -35,6 +35,7 @@
 //! then on.  What a ban names, and for how long, is nfsu2-bans'.  Each ban, rename and change says what the player had
 //! before (its history), for the operator to weigh.
 
+#[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -47,13 +48,19 @@ use nfsu2_lan::{CLOSE_BANNED, CLOSE_KICKED, CLOSE_RENAME, LanSwitch, Who, vip_nu
 use nfsu2_util::{log, now_ms, vip_str};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+#[cfg(unix)]
+use tokio::net::UnixListener;
 
 use super::App;
 use crate::paths;
 
-/// the socket's file in the state folder
+/// the socket's file in the state folder (Windows, which this server's Unix socket is not for: a file with the port
+/// the control channel listens on, on 127.0.0.1 only; whoever runs programs on this PC reaches it, as they reach the
+/// state folder)
+#[cfg(unix)]
 pub const SOCKET: &str = "control.sock";
+#[cfg(windows)]
+pub const SOCKET: &str = "control.port";
 /// a request's longest line, and how long one connection may take
 const MAX_LINE: u64 = 16 << 10;
 const WITHIN: Duration = Duration::from_secs(10);
@@ -91,6 +98,13 @@ pub struct Socket {
 impl Socket {
     /// At the stop: the file goes, as long as it is still this server's socket (a server started since on the same
     /// state folder has put its own there, and keeps it).  A socket's file stays on the disk after its process ends.
+    #[cfg(windows)]
+    pub fn remove(&self) {
+        if std::fs::read_to_string(&self.path).is_ok_and(|p| p.trim().parse() == Ok(self.id.0)) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+    #[cfg(unix)]
     pub fn remove(&self) {
         if std::fs::symlink_metadata(&self.path).is_ok_and(|m| m.file_type().is_socket() && (m.dev(), m.ino()) == self.id) {
             let _ = std::fs::remove_file(&self.path);
@@ -101,6 +115,41 @@ impl Socket {
 /// The socket, for as long as the server runs (a socket's file of that name from before goes first: one a server
 /// that ended without its stop left behind).  Without it (the path too long for a socket, say) the server runs on,
 /// and says so: None.
+#[cfg(windows)]
+pub fn listen(app: Arc<App>) -> Option<Socket> {
+    let path = paths::join(&app.o.state, SOCKET);
+    let made = || -> std::io::Result<(tokio::net::TcpListener, u16)> {
+        let l = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+        l.set_nonblocking(true)?;
+        let port = l.local_addr()?.port();
+        std::fs::write(&path, format!("{port}
+"))?;
+        Ok((tokio::net::TcpListener::from_std(l)?, port))
+    };
+    let (l, port) = match made() {
+        Ok(x) => x,
+        Err(e) => {
+            log::error(&format!("{path}: {e} (the control channel: no kick or ban without it)"));
+            return None;
+        }
+    };
+    tokio::spawn(async move {
+        loop {
+            match l.accept().await {
+                Ok((s, _)) => {
+                    let app = app.clone();
+                    tokio::spawn(async move {
+                        let _ = tokio::time::timeout(WITHIN, serve(app, s)).await;
+                    });
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+    });
+    Some(Socket { path, id: (port as u64, 0) })
+}
+
+#[cfg(unix)]
 pub fn listen(app: Arc<App>) -> Option<Socket> {
     let path = paths::join(&app.o.state, SOCKET);
     if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_socket()) {
@@ -131,8 +180,8 @@ pub fn listen(app: Arc<App>) -> Option<Socket> {
     Some(Socket { path, id })
 }
 
-async fn serve(app: Arc<App>, s: UnixStream) {
-    let (r, mut w) = s.into_split();
+async fn serve<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(app: Arc<App>, s: S) {
+    let (r, mut w) = tokio::io::split(s);
     let mut line = String::new();
     if BufReader::new(r.take(MAX_LINE)).read_line(&mut line).await.is_err() {
         return;

@@ -5,7 +5,7 @@
 //! /game.wasm?v= for, so a copy kept anywhere under that address is this module.
 
 use std::io::Write;
-use std::os::unix::fs::MetadataExt;
+use nfsu2_util::osfs::MetadataExt;
 use std::sync::Arc;
 
 use bytes::Bytes;

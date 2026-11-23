@@ -3,7 +3,7 @@
 //! 304, HEAD).  Every file system call is on a blocking thread, never on a runtime worker.
 
 use std::collections::HashMap;
-use std::os::unix::fs::{FileExt, MetadataExt};
+use nfsu2_util::osfs::{FileExt, MetadataExt};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -73,12 +73,12 @@ fn real_inside(roots: &Mutex<HashMap<String, String>>, root: &str, p: &str) -> O
     let rr = match cached {
         Some(r) => r,
         None => {
-            let r = std::fs::canonicalize(root).ok()?.to_string_lossy().into_owned();
+            let r = crate::paths::real(root).ok()?;
             roots.lock().insert(root.to_string(), r.clone());
             r
         }
     };
-    let rp = std::fs::canonicalize(p).ok()?.to_string_lossy().into_owned();
+    let rp = crate::paths::real(p).ok()?;
     rp.starts_with(&format!("{rr}/")).then_some(rp)
 }
 
@@ -96,8 +96,8 @@ pub fn locate_sync(roots: &Mutex<HashMap<String, String>>, real_state: &str, roo
 /// whatever is put at its path meanwhile.  Its real path has no symbolic link in it, so none is followed at its end
 /// (one put there since the look is refused), and the open never waits (a FIFO put there is refused, not waited on).
 pub fn open_found(real: &str) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(real)?;
+    use nfsu2_util::osfs::{O_NOFOLLOW, O_NONBLOCK, OpenOptionsExt};
+    let file = std::fs::OpenOptions::new().read(true).custom_flags(O_NOFOLLOW | O_NONBLOCK).open(real)?;
     let md = file.metadata()?;
     if !md.is_file() {
         return Err(std::io::ErrorKind::InvalidInput.into());

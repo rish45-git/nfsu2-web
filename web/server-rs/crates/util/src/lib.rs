@@ -13,6 +13,7 @@
 //! - [`host`]: the switch's hosts (the Online host at 10.77.0.1, the free-roam hub at 10.77.0.253): how the switch
 //!   hands them frames and how they send through it
 //! - [`rand`]: random bytes and integers from the OS (Node's `crypto.randomBytes`, `crypto.randomInt`)
+//! - [`osfs`]: the file-system calls Unix and Windows spell differently (the Windows build)
 //! - [`idhash`]: a fast hasher for maps by the server's own numbers (virtual addresses, slots, player ids)
 
 pub mod bucket;
@@ -25,6 +26,7 @@ pub mod js;
 pub mod json;
 pub mod log;
 pub mod logfile;
+pub mod osfs;
 pub mod rand;
 
 pub use bucket::{Bucket, Budget, Rate};

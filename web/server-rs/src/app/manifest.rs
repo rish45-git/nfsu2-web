@@ -9,8 +9,8 @@
 //! folder (keys) is skipped wherever it is (a second guard: the start refuses one inside the folder).
 
 use std::io::{self, Write};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -20,6 +20,7 @@ use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 
 use nfsu2_util::json::write_str;
+use nfsu2_util::osfs::MetadataExt;
 
 use super::blocks::V2;
 use super::etag;
@@ -77,7 +78,11 @@ fn entries(dir: &str) -> io::Result<Vec<(String, std::fs::FileType)>> {
         let e = e?;
         let name = e.file_name();
         let t = e.file_type()?;
-        v.push((name.as_bytes().to_vec(), name.to_string_lossy().into_owned(), t));
+        #[cfg(unix)]
+        let bytes = name.as_bytes().to_vec();
+        #[cfg(windows)]
+        let bytes = name.to_string_lossy().into_owned().into_bytes();
+        v.push((bytes, name.to_string_lossy().into_owned(), t));
     }
     v.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(v.into_iter().map(|(_, n, t)| (n, t)).collect())
@@ -91,7 +96,7 @@ fn walk(dir: &str, rel: &str, real_state: &str, out: &mut String, count: &mut us
         let abs = format!("{dir}/{name}");
         let r = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
         if t.is_dir() {
-            let real = std::fs::canonicalize(&abs).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| abs.clone());
+            let real = crate::paths::real(&abs).unwrap_or_else(|_| abs.clone());
             if within(&real, real_state) {
                 continue;
             }

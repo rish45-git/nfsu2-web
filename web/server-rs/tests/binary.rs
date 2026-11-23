@@ -1706,3 +1706,37 @@ async fn a_friend_is_invited_to_a_race_lobby_through_the_server() {
     }
     assert_eq!(srv.stop().await, Some(0));
 }
+
+// --friends, a player's own PC as the server for their friends: /players and the switch answer, also by an address
+// the server was never told (the friends type the PC's address); there is no page, no saves or names, and nothing
+// of the game folder; a name it was not given is still not its own
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_binary_for_friends_answers_the_switch_and_nothing_of_the_game() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (data, wasm) = game_folder(tmp.path());
+    std::fs::create_dir_all(data.join("GLOBAL")).unwrap();
+    std::fs::write(data.join("GLOBAL/GLOBALB.LZC"), "data").unwrap();
+    let (port, state) = (free_port(), tmp.path().join("state"));
+    let mut srv = Server::spawn(command(&data, &wasm, port, &state, &["--friends"]), port);
+    srv.ready().await;
+    assert!(srv.lines().iter().any(|l| l.starts_with("  friends   : port ")), "{:?}", srv.lines());
+    assert_eq!(http(port, "GET", "/players", &[], "").await.0, 200);
+    for path in ["/", "/data/GLOBAL/GLOBALB.LZC", "/data/SPEED2.EXE", "/data-manifest", "/game.wasm", "/game.json", "/vault", "/names", "/friends"] {
+        assert_eq!(http(port, "GET", path, &[], "").await.0, 404, "{path}");
+    }
+    // by an address, on the switch; by a name that is not the server's, nothing
+    let by = |host: &'static str| async move {
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        s.write_all(format!("GET /players HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+        let mut r = Vec::new();
+        s.read_to_end(&mut r).await.unwrap();
+        String::from_utf8_lossy(&r).get(9..12).and_then(|c| c.parse::<u16>().ok()).unwrap_or(0)
+    };
+    assert_eq!(by("192.168.1.20").await, 200);
+    assert_eq!(by("game.example.com").await, 421);
+    let a = Browser::open_at(&format!("192.168.1.20:{port}"), port, "", None).await;
+    a.hello("Ann");
+    let p: Value = serde_json::from_str(&srv.players_until(1).await).unwrap();
+    assert_eq!(p["players"], 1, "{p}");
+    assert_eq!(srv.stop().await, Some(0));
+}

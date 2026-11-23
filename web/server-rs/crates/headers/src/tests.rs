@@ -402,3 +402,19 @@ fn the_policy_with_turnstile() {
         CSP.replace("'wasm-unsafe-eval'", &format!("'wasm-unsafe-eval' {cf}")).replace("frame-src 'none'", &format!("frame-src {cf}"))
     );
 }
+
+// --friends (a player's own PC): a host that is an address is the server's own, whichever; a name is not
+#[test]
+fn any_address_takes_addresses_not_names() {
+    let check = HostCheck::new(&[]).any_address(true);
+    assert!(check.check(Some("192.168.1.20:8691")));
+    assert!(check.check(Some("71.212.48.130")));
+    assert!(check.check(Some("[2001:db8::1]:8691")));
+    assert!(check.check(Some("localhost:8691")));
+    assert!(!check.check(Some("evil.example:8691")));
+    assert!(!check.check(Some("")));
+    // and without it, only this machine and the given names
+    let strict = HostCheck::new(&[]);
+    assert!(!strict.check(Some("192.168.1.20:8691")));
+    assert!(strict.check(Some("127.0.0.1:8691")));
+}

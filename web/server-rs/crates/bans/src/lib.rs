@@ -47,7 +47,7 @@
 //! it (0600), renamed over it.  A server from before kinds reads a race ban as a full one (its file has no kind).
 
 use std::io::{self, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use nfsu2_util::osfs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

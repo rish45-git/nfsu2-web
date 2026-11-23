@@ -271,7 +271,7 @@ impl App {
         lan_sndbuf: usize,
         compress_threads: usize,
     ) -> App {
-        let host_check = HostCheck::new(&o.hosts);
+        let host_check = HostCheck::new(&o.hosts).any_address(o.friends);
         let real_roots: Arc<Mutex<HashMap<String, String>>> = Arc::default();
         let manifest: Arc<manifest::ManifestCell> = Arc::default();
         // the kept blocks: in the state folder, swept again for each new manifest
@@ -552,6 +552,11 @@ impl App {
         let Some(p) = url::decode_uri_component(&u.pathname) else { return self.bad_request(q, s).await };
         if p.chars().any(|c| c <= '\u{1f}' || c == '\u{7f}' || c == '\\') || p.contains("//") {
             return self.bad_request(q, s).await;
+        }
+        // --friends, a player's own PC: the switch (/lan, an upgrade: lan.rs) and /players, nothing else.  No page, no
+        // keyphrase saves or names, and none of the game folder's files
+        if self.o.friends && p != "/players" {
+            return self.not_found(q, s).await;
         }
         if q.method == "PUT" && self.o.dev && !self.o.artifacts.is_empty() && p.starts_with("/artifacts/") {
             return self.put_artifact(q, s, &p[11..]).await;

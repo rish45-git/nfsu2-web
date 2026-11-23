@@ -26,7 +26,7 @@
 //! kept, so that no shared cache's copy of an answer from before is ever asked for again).
 
 use std::io::{self, Write};
-use std::os::unix::fs::{FileExt, MetadataExt};
+use nfsu2_util::osfs::{FileExt, MetadataExt};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 

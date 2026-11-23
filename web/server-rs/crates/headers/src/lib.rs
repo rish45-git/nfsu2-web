@@ -396,11 +396,14 @@ pub fn is_local_or_ip(host_header: Option<&str>) -> bool {
 /// The names the server answers for (Host, Origin).  [`HostCheck::check`]: the host is one of the server's own
 /// names: this machine (localhost, 127.0.0.0/8, ::1) always, the given names (exact, or "*.zone" for one label under
 /// zone), and the names of its certificate (`set_cert_names`, replaced when the certificate is).  Thread-safe: the
-/// certificate's names may be replaced while requests are checked.
+/// certificate's names may be replaced while requests are checked.  With `any_address` (a player's own PC as the
+/// server for friends, --friends): a host that is an IP address too, whichever (the PC's addresses are not known
+/// beforehand, and no other site's name leads to it by an address: DNS rebinding needs a name).
 pub struct HostCheck {
     /// the given names, in lower case
     fixed: Vec<String>,
     names: RwLock<Names>,
+    any_address: bool,
 }
 
 /// the names one check reads: exact ones (in the order given, for `names()`) and ".zone"s
@@ -415,7 +418,13 @@ impl HostCheck {
     pub fn new(names: &[String]) -> Self {
         let fixed: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
         let names = RwLock::new(Self::build(&fixed, &[]));
-        HostCheck { fixed, names }
+        HostCheck { fixed, names, any_address: false }
+    }
+
+    /// a host that is an IP address is the server's own too (--friends)
+    pub fn any_address(mut self, on: bool) -> Self {
+        self.any_address = on;
+        self
     }
 
     fn build(fixed: &[String], cert: &[String]) -> Names {
@@ -441,6 +450,9 @@ impl HostCheck {
             return false;
         }
         if is_loopback_name(&n) {
+            return true;
+        }
+        if self.any_address && ip::is_ip(n.strip_prefix('[').and_then(|x| x.strip_suffix(']')).unwrap_or(&n)) != 0 {
             return true;
         }
         let names = self.names.read();

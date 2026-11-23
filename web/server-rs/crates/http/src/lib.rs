@@ -15,6 +15,7 @@
 //! broke the connection is answered first; a TLS handshake has `handshake_timeout` in all, not between its bytes).
 
 mod conn;
+mod errno;
 mod head;
 mod headers;
 mod parse;
@@ -72,7 +73,9 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
+use tokio::net::{TcpListener, TcpStream};
+#[cfg(unix)]
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -329,6 +332,7 @@ impl Hold {
 pub enum Stream {
     Plain(TcpStream),
     Tls(Box<tokio_rustls::server::TlsStream<TcpStream>>),
+    #[cfg(unix)]
     Unix(UnixStream),
 }
 
@@ -339,6 +343,7 @@ impl Stream {
         match self {
             Stream::Plain(s) => socket2::SockRef::from(s).set_send_buffer_size(bytes),
             Stream::Tls(s) => socket2::SockRef::from(s.get_ref().0).set_send_buffer_size(bytes),
+            #[cfg(unix)]
             Stream::Unix(s) => socket2::SockRef::from(s).set_send_buffer_size(bytes),
         }
     }
@@ -353,6 +358,7 @@ impl Stream {
                 let (r, w) = tokio::io::split(*s);
                 (ReadHalf::Tls(r), WriteHalf::Tls(w))
             }
+            #[cfg(unix)]
             Stream::Unix(s) => {
                 let (r, w) = s.into_split();
                 (ReadHalf::Unix(r), WriteHalf::Unix(w))
@@ -364,11 +370,13 @@ impl Stream {
 pub enum ReadHalf {
     Plain(tokio::net::tcp::OwnedReadHalf),
     Tls(tokio::io::ReadHalf<tokio_rustls::server::TlsStream<TcpStream>>),
+    #[cfg(unix)]
     Unix(tokio::net::unix::OwnedReadHalf),
 }
 pub enum WriteHalf {
     Plain(tokio::net::tcp::OwnedWriteHalf),
     Tls(tokio::io::WriteHalf<tokio_rustls::server::TlsStream<TcpStream>>),
+    #[cfg(unix)]
     Unix(tokio::net::unix::OwnedWriteHalf),
 }
 
@@ -377,6 +385,7 @@ impl AsyncRead for ReadHalf {
         match self.get_mut() {
             ReadHalf::Plain(r) => Pin::new(r).poll_read(cx, buf),
             ReadHalf::Tls(r) => Pin::new(r).poll_read(cx, buf),
+            #[cfg(unix)]
             ReadHalf::Unix(r) => Pin::new(r).poll_read(cx, buf),
         }
     }
@@ -386,6 +395,7 @@ impl AsyncWrite for WriteHalf {
         match self.get_mut() {
             WriteHalf::Plain(w) => Pin::new(w).poll_write(cx, buf),
             WriteHalf::Tls(w) => Pin::new(w).poll_write(cx, buf),
+            #[cfg(unix)]
             WriteHalf::Unix(w) => Pin::new(w).poll_write(cx, buf),
         }
     }
@@ -393,6 +403,7 @@ impl AsyncWrite for WriteHalf {
         match self.get_mut() {
             WriteHalf::Plain(w) => Pin::new(w).poll_write_vectored(cx, bufs),
             WriteHalf::Tls(w) => Pin::new(w).poll_write_vectored(cx, bufs),
+            #[cfg(unix)]
             WriteHalf::Unix(w) => Pin::new(w).poll_write_vectored(cx, bufs),
         }
     }
@@ -400,6 +411,7 @@ impl AsyncWrite for WriteHalf {
         match self {
             WriteHalf::Plain(w) => w.is_write_vectored(),
             WriteHalf::Tls(w) => w.is_write_vectored(),
+            #[cfg(unix)]
             WriteHalf::Unix(w) => w.is_write_vectored(),
         }
     }
@@ -407,6 +419,7 @@ impl AsyncWrite for WriteHalf {
         match self.get_mut() {
             WriteHalf::Plain(w) => Pin::new(w).poll_flush(cx),
             WriteHalf::Tls(w) => Pin::new(w).poll_flush(cx),
+            #[cfg(unix)]
             WriteHalf::Unix(w) => Pin::new(w).poll_flush(cx),
         }
     }
@@ -414,6 +427,7 @@ impl AsyncWrite for WriteHalf {
         match self.get_mut() {
             WriteHalf::Plain(w) => Pin::new(w).poll_shutdown(cx),
             WriteHalf::Tls(w) => Pin::new(w).poll_shutdown(cx),
+            #[cfg(unix)]
             WriteHalf::Unix(w) => Pin::new(w).poll_shutdown(cx),
         }
     }
@@ -424,6 +438,7 @@ impl AsyncRead for Stream {
         match self.get_mut() {
             Stream::Plain(s) => Pin::new(s).poll_read(cx, buf),
             Stream::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
+            #[cfg(unix)]
             Stream::Unix(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
@@ -433,6 +448,7 @@ impl AsyncWrite for Stream {
         match self.get_mut() {
             Stream::Plain(s) => Pin::new(s).poll_write(cx, buf),
             Stream::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
+            #[cfg(unix)]
             Stream::Unix(s) => Pin::new(s).poll_write(cx, buf),
         }
     }
@@ -440,6 +456,7 @@ impl AsyncWrite for Stream {
         match self.get_mut() {
             Stream::Plain(s) => Pin::new(s).poll_flush(cx),
             Stream::Tls(s) => Pin::new(s.as_mut()).poll_flush(cx),
+            #[cfg(unix)]
             Stream::Unix(s) => Pin::new(s).poll_flush(cx),
         }
     }
@@ -447,6 +464,7 @@ impl AsyncWrite for Stream {
         match self.get_mut() {
             Stream::Plain(s) => Pin::new(s).poll_shutdown(cx),
             Stream::Tls(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
+            #[cfg(unix)]
             Stream::Unix(s) => Pin::new(s).poll_shutdown(cx),
         }
     }
@@ -464,10 +482,10 @@ pub async fn bind(host: &str, port: u16, fallback: Option<&str>) -> Result<(TcpL
             Ok(l) => return Ok((l, host)),
             Err(e) => {
                 let code = e.raw_os_error().unwrap_or(0);
-                if code == libc::EADDRINUSE {
+                if code == errno::EADDRINUSE {
                     return Err(format!("port {port} is in use"));
                 }
-                let retry = if matches!(code, libc::EAFNOSUPPORT | libc::EADDRNOTAVAIL | libc::EINVAL) { fallback.take() } else { None };
+                let retry = if matches!(code, errno::EAFNOSUPPORT | errno::EADDRNOTAVAIL | errno::EINVAL) { fallback.take() } else { None };
                 match retry {
                     Some(f) => host = f,
                     None => return Err(listen_message(&e, &host, port)),
@@ -492,7 +510,9 @@ async fn listen_on(host: &str, port: u16) -> io::Result<TcpListener> {
         // "::" takes IPv4 too (Node's default dual stack)
         sock.set_only_v6(false)?;
     }
-    // as libuv: a restarted server may bind while old connections linger in TIME_WAIT
+    // as libuv: a restarted server may bind while old connections linger in TIME_WAIT (not on Windows, where the
+    // option means another thing: a second server could take a port that is in use)
+    #[cfg(unix)]
     sock.set_reuse_address(true)?;
     sock.set_nonblocking(true)?;
     sock.bind(&addr.into())?;
@@ -506,11 +526,11 @@ async fn listen_on(host: &str, port: u16) -> io::Result<TcpListener> {
 /// Node's message for a listen error: "listen EACCES: permission denied 0.0.0.0:80" (":::80" for "::")
 fn listen_message(e: &io::Error, host: &str, port: u16) -> String {
     let (code, text) = match e.raw_os_error() {
-        Some(libc::EACCES) => ("EACCES", "permission denied"),
-        Some(libc::EPERM) => ("EPERM", "operation not permitted"),
-        Some(libc::EADDRNOTAVAIL) => ("EADDRNOTAVAIL", "address not available"),
-        Some(libc::EAFNOSUPPORT) => ("EAFNOSUPPORT", "address family not supported"),
-        Some(libc::EINVAL) => ("EINVAL", "invalid argument"),
+        Some(errno::EACCES) => ("EACCES", "permission denied"),
+        Some(errno::EPERM) => ("EPERM", "operation not permitted"),
+        Some(errno::EADDRNOTAVAIL) => ("EADDRNOTAVAIL", "address not available"),
+        Some(errno::EAFNOSUPPORT) => ("EAFNOSUPPORT", "address family not supported"),
+        Some(errno::EINVAL) => ("EINVAL", "invalid argument"),
         _ => return e.to_string(),
     };
     format!("listen {code}: {text} {host}:{port}")
@@ -532,17 +552,20 @@ pub fn serve<S: Service>(
 /// The same for a Unix socket, plain HTTP: a proxy on this machine reaches the server there without TCP (cloudflared's
 /// `unix:` origin), and each of its connections counts as one from `peer` (the address the proxy would have on TCP,
 /// 127.0.0.1, so it is the trusted proxy it is there).
+#[cfg(unix)]
 pub fn serve_unix<S: Service>(listener: UnixListener, peer: SocketAddr, limits: Arc<Limits>, service: Arc<S>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(accept_loop(Listener::Unix(listener, peer), None, limits, service))
 }
 
 enum Listener {
     Tcp(TcpListener),
+    #[cfg(unix)]
     Unix(UnixListener, SocketAddr),
 }
 
 enum Accepted {
     Tcp(TcpStream),
+    #[cfg(unix)]
     Unix(UnixStream),
 }
 
@@ -550,6 +573,7 @@ impl Listener {
     async fn accept(&self) -> io::Result<(Accepted, SocketAddr)> {
         match self {
             Listener::Tcp(l) => l.accept().await.map(|(s, peer)| (Accepted::Tcp(s), peer)),
+            #[cfg(unix)]
             Listener::Unix(l, peer) => l.accept().await.map(|(s, _)| (Accepted::Unix(s), *peer)),
         }
     }
@@ -572,7 +596,7 @@ async fn accept_loop<S: Service>(listener: Listener, tls: Option<Arc<tls::TlsSta
             Ok(c) => c,
             Err(e) => {
                 // out of file descriptors (or memory): wait a little, the connections that end give them back
-                if matches!(e.raw_os_error(), Some(libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM)) {
+                if matches!(e.raw_os_error(), Some(errno::EMFILE | errno::ENFILE | errno::ENOBUFS | errno::ENOMEM)) {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
                 continue;
@@ -589,6 +613,7 @@ async fn accept_loop<S: Service>(listener: Listener, tls: Option<Arc<tls::TlsSta
         // in it costs this connection only, not the loop and with it the port.)
         let Ok(Some(admitted)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| service.admit(&peer))) else { continue };
         // Node's http server: noDelay
+        #[cfg_attr(windows, allow(irrefutable_let_patterns))]
         if let Accepted::Tcp(tcp) = &sock {
             let _ = tcp.set_nodelay(true);
         }
@@ -631,6 +656,7 @@ async fn connection<S: Service>(
         }
         (Accepted::Tcp(tcp), None) => Stream::Plain(tcp),
         // (never TLS: serve_unix gives none)
+        #[cfg(unix)]
         (Accepted::Unix(s), _) => Stream::Unix(s),
     };
     let info = ConnInfo { peer_addr: peer, peer: remote_address(&peer), encrypted };

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// CPU seconds (user + system) the process has used.
+#[cfg(unix)]
 pub fn process_cpu_seconds() -> f64 {
     // SAFETY: getrusage only writes the struct it is given
     unsafe {
@@ -21,13 +22,36 @@ pub fn process_cpu_seconds() -> f64 {
     }
 }
 
+/// CPU seconds (user + system) the process has used (Windows: GetProcessTimes, in 100 ns).
+#[cfg(windows)]
+pub fn process_cpu_seconds() -> f64 {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn GetProcessTimes(process: isize, creation: *mut u64, exit: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
+    }
+    let (mut c, mut e, mut k, mut u) = (0u64, 0u64, 0u64, 0u64);
+    // SAFETY: the four FILETIMEs are 64 bits each (two u32, low first: a u64 on x86), and the call only writes them
+    if unsafe { GetProcessTimes(GetCurrentProcess(), &mut c, &mut e, &mut k, &mut u) } == 0 {
+        return 0.0;
+    }
+    (k + u) as f64 / 1e7
+}
+
 /// Resident memory in bytes (Linux: /proc/self/statm), 0 where it cannot be read.
+#[cfg(unix)]
 pub fn resident_bytes() -> u64 {
     let Ok(s) = std::fs::read_to_string("/proc/self/statm") else { return 0 };
     let pages: u64 = s.split_whitespace().nth(1).and_then(|x| x.parse().ok()).unwrap_or(0);
     // SAFETY: sysconf has no preconditions
     let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     pages * if page > 0 { page as u64 } else { 4096 }
+}
+
+/// Resident memory in bytes: not read on Windows (0, as where it cannot be read).
+#[cfg(windows)]
+pub fn resident_bytes() -> u64 {
+    0
 }
 
 /// The share of `threads` cores the process used between one `sample()` and the next.

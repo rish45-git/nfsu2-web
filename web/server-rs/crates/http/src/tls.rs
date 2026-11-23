@@ -333,9 +333,9 @@ fn node_ip(b: &[u8]) -> Option<String> {
 /// Node's message for a file it cannot read: "ENOENT: no such file or directory, open '<path>'"
 fn fs_message(e: &io::Error, path: &Path) -> String {
     let (code, text) = match e.raw_os_error() {
-        Some(libc::ENOENT) => ("ENOENT", "no such file or directory"),
-        Some(libc::EACCES) => ("EACCES", "permission denied"),
-        Some(libc::EISDIR) => return "EISDIR: illegal operation on a directory, read".to_string(),
+        Some(crate::errno::ENOENT) => ("ENOENT", "no such file or directory"),
+        Some(crate::errno::EACCES) => ("EACCES", "permission denied"),
+        Some(crate::errno::EISDIR) => return "EISDIR: illegal operation on a directory, read".to_string(),
         _ => return format!("{e}, open '{}'", path.display()),
     };
     format!("{code}: {text}, open '{}'", path.display())

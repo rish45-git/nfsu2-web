@@ -91,7 +91,7 @@ mod tests {
 
 fn main() {
     let argv: Vec<String> = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
-    let cwd = std::env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "/".into());
+    let cwd = std::env::current_dir().map(|p| paths::native(&p.to_string_lossy())).unwrap_or_else(|_| "/".into());
     let env = |k: &str| std::env::var_os(k).map(|v| v.to_string_lossy().into_owned());
     // an operator's command to the running server (src/ctl.rs), not a server
     if argv.first().is_some_and(|a| a == "ctl") {

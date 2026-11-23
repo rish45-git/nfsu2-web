@@ -1020,6 +1020,10 @@ async fn run_bot(i: usize, a: Arc<Args>, sh: Arc<Shared>) {
     }
 }
 
+#[cfg(windows)]
+fn raise_nofile() {}
+
+#[cfg(unix)]
 fn raise_nofile() {
     // SAFETY: plain libc calls on a struct they fill
     unsafe {

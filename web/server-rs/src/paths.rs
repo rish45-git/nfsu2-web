@@ -4,6 +4,52 @@
 
 /// `path.posix.normalize` of an absolute path: "." and ".." resolved, repeated and trailing slashes gone ("/" stays)
 pub fn normalize_abs(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let p = native(p);
+        if let Some(d) = drive(&p) {
+            return format!("{d}{}", normalize_posix(&p[2..]));
+        }
+        normalize_posix(&p)
+    }
+    #[cfg(not(windows))]
+    normalize_posix(p)
+}
+
+/// Windows: a path of the system's as the server keeps its paths: "C:/a/b" (forward slashes, which Windows takes
+/// too; no "\\?\" prefix of a canonical path).  Elsewhere: as it is.
+pub fn native(p: &str) -> String {
+    #[cfg(windows)]
+    {
+        let p = p.strip_prefix(r"\\?\").unwrap_or(p);
+        p.replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    p.to_string()
+}
+
+/// `fs.realpathSync(p)`, as the server keeps its paths
+pub fn real(p: &str) -> std::io::Result<String> {
+    std::fs::canonicalize(p).map(|r| native(&r.to_string_lossy()))
+}
+
+/// "C:" of "C:/a" (Windows)
+#[cfg(windows)]
+fn drive(p: &str) -> Option<&str> {
+    let b = p.as_bytes();
+    (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':').then(|| &p[..2])
+}
+
+/// whether `resolve` takes p as it is: from the root (Windows: or from a drive, "C:/a" or "C:\a")
+fn is_abs(p: &str) -> bool {
+    #[cfg(windows)]
+    if drive(p).is_some() || p.starts_with('\\') {
+        return true;
+    }
+    p.starts_with('/')
+}
+
+fn normalize_posix(p: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     for seg in p.split('/') {
         match seg {
@@ -27,7 +73,7 @@ pub fn normalize_abs(p: &str) -> String {
 
 /// `path.resolve(base, p)` with an absolute base: p itself when it is absolute
 pub fn resolve(base: &str, p: &str) -> String {
-    if p.starts_with('/') { normalize_abs(p) } else { normalize_abs(&format!("{base}/{p}")) }
+    if is_abs(p) { normalize_abs(p) } else { normalize_abs(&format!("{base}/{p}")) }
 }
 
 /// `path.join(a, b)` for an absolute a
@@ -45,6 +91,10 @@ pub fn dirname(p: &str) -> String {
         None => ".".into(),
         Some(i) => {
             let d = t[..i].trim_end_matches('/');
+            #[cfg(windows)]
+            if drive(d).is_some() && d.len() == 2 {
+                return format!("{d}/");
+            }
             if d.is_empty() { "/".into() } else { d.to_string() }
         }
     }
